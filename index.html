@@ -137,7 +137,7 @@ body {
 
 .match-card {
   background: var(--card2); border-radius: 10px;
-  padding: 12px 14px; margin-bottom: 8px;
+  padding: 12px 14px; margin-bottom: 8px; overflow: hidden;
 }
 .match-court {
   font-size: 11px; color: var(--muted); font-weight: 600;
@@ -172,9 +172,9 @@ body {
 }
 .match-vs .tn.r { text-align: right; }
 .vs-tag { font-size: 12px; color: var(--muted); flex-shrink: 0; }
-.score-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.score-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; width: 100%; overflow: hidden; }
 .score-input {
-  flex: 1; padding: 10px 8px; border-radius: 9px;
+  flex: 1; min-width: 0; width: 0; padding: 10px 8px; border-radius: 9px;
   background: var(--bg); border: 1.5px solid var(--sep);
   color: var(--text); font-size: 22px; font-weight: 700;
   text-align: center; font-family: inherit; outline: none;
@@ -271,6 +271,23 @@ body {
   background: var(--accent-dim); color: var(--accent);
   margin-bottom: 8px;
 }
+
+/* ── MODE SELECTOR ────────────────────────────────── */
+.seg {
+  display: flex; background: var(--card2); border-radius: var(--r);
+  padding: 3px; gap: 3px;
+}
+.seg-btn {
+  flex: 1; padding: 9px 0; border-radius: 10px;
+  border: none; background: none;
+  color: var(--muted); font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+  transition: background .15s, color .15s;
+}
+.seg-btn.active {
+  background: var(--card); color: var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
 </style>
 </head>
 <body>
@@ -278,6 +295,12 @@ body {
 <!-- ──────────────── SETUP ──────────────── -->
 <div id="screen-setup" class="screen active">
   <div class="page-title">⚡ Americano</div>
+
+  <div class="section-label">Mode</div>
+  <div class="seg">
+    <button class="seg-btn" id="mode-singles" onclick="setMode('singles')">Singles</button>
+    <button class="seg-btn" id="mode-teams"   onclick="setMode('teams')">Teams</button>
+  </div>
 
   <div class="section-label">Courts available</div>
   <div class="stepper">
@@ -295,9 +318,9 @@ body {
     <button class="step-btn" onclick="adj('points',1)">+</button>
   </div>
 
-  <div class="section-label">Teams</div>
+  <div class="section-label" id="label-entries">Teams</div>
   <div id="teams-list"></div>
-  <button class="ghost-btn" onclick="addTeam()">＋ Add team</button>
+  <button class="ghost-btn" id="add-btn" onclick="addTeam()">＋ Add team</button>
 
   <button class="primary-btn" id="gen-btn" onclick="generate()">Generate schedule</button>
   <button class="danger-btn" id="reset-btn" style="display:none" onclick="resetTournament()">↺ Reset &amp; start over</button>
@@ -348,6 +371,7 @@ body {
    STATE
 ═══════════════════════════════════════════ */
 let S = {
+  mode: 'teams',        // 'teams' | 'singles'
   courts: 2,
   points: 11,
   teams: [],            // [{id, name}]
@@ -390,11 +414,29 @@ function goTo(name) {
 /* ═══════════════════════════════════════════
    SETUP
 ═══════════════════════════════════════════ */
+// 'Team' or 'Player' depending on mode
+function noun(cap = true) {
+  const w = S.mode === 'singles' ? 'player' : 'team';
+  return cap ? w[0].toUpperCase() + w.slice(1) : w;
+}
+
+function setMode(m) {
+  S.mode = m; save(); renderSetup();
+}
+
 function renderSetup() {
   document.getElementById('courts-val').textContent = S.courts;
   document.getElementById('points-val').textContent = S.points;
   document.getElementById('courts-minus').disabled = S.courts <= 1;
   document.getElementById('points-minus').disabled = S.points <= 5;
+
+  // mode selector
+  document.getElementById('mode-singles').classList.toggle('active', S.mode === 'singles');
+  document.getElementById('mode-teams').classList.toggle('active',   S.mode === 'teams');
+
+  // dynamic labels
+  document.getElementById('label-entries').textContent = noun() + 's';
+  document.getElementById('add-btn').textContent = '＋ Add ' + noun(false);
 
   const list = document.getElementById('teams-list');
   list.innerHTML = '';
@@ -402,8 +444,9 @@ function renderSetup() {
     const d = document.createElement('div');
     d.className = 'input-row';
     d.innerHTML =
-      `<input type="text" placeholder="Team ${i+1}" value="${esc(t.name)}"
-         oninput="S.teams[${i}].name=this.value;save()">` +
+      `<input type="text" placeholder="${noun()} ${i+1}" value="${esc(t.name)}"
+         oninput="S.teams[${i}].name=this.value;save()"
+         onkeydown="if(event.key==='Enter'){event.preventDefault();addTeam();}">` +
       `<button class="del-btn" onclick="removeTeam(${i})">×</button>`;
     list.appendChild(d);
   });
@@ -418,6 +461,8 @@ function adj(key, d) {
 function addTeam() {
   S.teams.push({ id: uid(), name: '' });
   save(); renderSetup();
+  const inputs = document.getElementById('teams-list').querySelectorAll('input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
 }
 
 function removeTeam(i) {
@@ -579,11 +624,11 @@ function matchHtml(m, ri, mi, court) {
       <span class="tn r">${esc(t2.name)}</span>
     </div>
     <div class="score-row">
-      <input class="score-input" type="number" inputmode="numeric" pattern="[0-9]*"
-        min="0" placeholder="0" value="${v1}" id="s1-${ri}-${mi}">
+      <input class="score-input" type="text" inputmode="decimal" pattern="[0-9]*"
+        placeholder="0" value="${v1}" id="s1-${ri}-${mi}" autocomplete="off">
       <span class="score-dash">–</span>
-      <input class="score-input" type="number" inputmode="numeric" pattern="[0-9]*"
-        min="0" placeholder="0" value="${v2}" id="s2-${ri}-${mi}">
+      <input class="score-input" type="text" inputmode="decimal" pattern="[0-9]*"
+        placeholder="0" value="${v2}" id="s2-${ri}-${mi}" autocomplete="off">
     </div>
     <button class="save-btn" onclick="saveMatch(${ri},${mi})">Save score</button>
   </div>`;
