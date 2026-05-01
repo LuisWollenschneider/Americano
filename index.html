@@ -370,6 +370,8 @@ body {
 /* ═══════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════ */
+let openRounds = new Set(); // in-memory only, not persisted
+
 let S = {
   mode: 'teams',        // 'teams' | 'singles'
   courts: 2,
@@ -380,7 +382,14 @@ let S = {
 };
 
 const STORE = 'americano_v2';
-function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch(e){} }
+function save() {
+  try {
+    const data = { ...S, rounds: S.rounds.map(r => ({
+      ...r, matches: r.matches.map(({ ed, ...m }) => m)
+    }))};
+    localStorage.setItem(STORE, JSON.stringify(data));
+  } catch(e) {}
+}
 function load() {
   try {
     const raw = localStorage.getItem(STORE);
@@ -392,9 +401,13 @@ function load() {
    BOOT
 ═══════════════════════════════════════════ */
 load();
+const firstIncomplete = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
+if (firstIncomplete !== -1) openRounds.add(firstIncomplete);
 renderSetup();
 renderRounds();
 renderStandings();
+const savedTab = sessionStorage.getItem('tab') || 'setup';
+goTo(!S.generated && savedTab !== 'setup' ? 'setup' : savedTab);
 if (S.generated) {
   document.getElementById('reset-btn').style.display = '';
   document.getElementById('gen-btn').textContent = 'Regenerate schedule';
@@ -408,6 +421,7 @@ function goTo(name) {
     document.getElementById('screen-'+n).classList.toggle('active', n===name);
     document.getElementById('nav-'+n).classList.toggle('active', n===name);
   });
+  sessionStorage.setItem('tab', name);
   if (name === 'standings') renderStandings();
 }
 
@@ -506,6 +520,7 @@ function generate() {
 
   S.rounds = buildRounds(S.teams);
   S.generated = true;
+  openRounds = new Set(S.rounds.map((_, i) => i)); // open all
   save();
   renderRounds();
   renderStandings();
@@ -534,61 +549,47 @@ function renderRounds() {
   }
 
   el.innerHTML = '';
-  let firstOpenSet = false;
 
   S.rounds.forEach((round, ri) => {
-    const ms     = round.matches;
-    const played = ms.filter(m => m.s1 !== null).length;
-    const total  = ms.length;
-    const allDone = played === total;
-    const inProg  = played > 0 && !allDone;
+    const ms      = round.matches;
+    const played  = ms.filter(m => m.s1 !== null).length;
+    const editing = ms.some(m => m.ed);
+    const total   = ms.length;
+    const allDone = played === total && !editing;
+    const inProg  = (played > 0 && !allDone) || editing;
 
     const statusText = allDone ? '✓ Done'
                      : inProg  ? '⏳ In progress'
                      : `${total} match${total !== 1 ? 'es' : ''}`;
 
-    const id = `slot-${ri}`;
-    const card = document.createElement('div');
-    card.className = 'slot-card';
-    card.id = id;
-
-    // bye banner (odd number of teams)
     const byeTeam = round.bye ? teamById(round.bye) : null;
     const byeHtml = byeTeam
       ? `<div class="bye-row">💤 <strong>${esc(byeTeam.name)}</strong> has a bye this round</div>`
       : '';
 
-    // court numbers cycle 1→C within the round
     const bodyHtml = ms.map((m, mi) =>
       matchHtml(m, ri, mi, (mi % S.courts) + 1)
     ).join('');
 
+    const card = document.createElement('div');
+    card.className = 'slot-card' + (openRounds.has(ri) ? ' open' : '');
+    card.id = `slot-${ri}`;
     card.innerHTML =
-      `<div class="slot-header" onclick="toggleSlot('${id}')">` +
+      `<div class="slot-header" onclick="toggleSlot(${ri})">` +
         `<span class="slot-label">Round ${ri + 1}</span>` +
         `<span class="slot-status">${statusText}</span>` +
         `<svg class="slot-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</div>` +
       `<div class="slot-body">${byeHtml}${bodyHtml}</div>`;
 
-    // auto-open first incomplete round
-    if (!firstOpenSet && !allDone) {
-      card.classList.add('open');
-      firstOpenSet = true;
-    }
-
     el.appendChild(card);
   });
-
-  // all done → open last round
-  if (!firstOpenSet) {
-    const last = el.querySelector('.slot-card:last-child');
-    if (last) last.classList.add('open');
-  }
 }
 
-function toggleSlot(id) {
-  document.getElementById(id).classList.toggle('open');
+function toggleSlot(ri) {
+  if (openRounds.has(ri)) openRounds.delete(ri);
+  else openRounds.add(ri);
+  document.getElementById(`slot-${ri}`).classList.toggle('open');
 }
 
 function matchHtml(m, ri, mi, court) {
@@ -617,8 +618,8 @@ function matchHtml(m, ri, mi, court) {
     </div>`;
   }
 
-  const v1 = '';  // always blank when editing — placeholder shows 0
-  const v2 = '';
+  const v1 = (m.s1 !== null && m.s1 !== 0) ? m.s1 : '';
+  const v2 = (m.s2 !== null && m.s2 !== 0) ? m.s2 : '';
   return `<div class="match-card">
     ${header}
     <div class="match-vs">
@@ -648,6 +649,8 @@ function saveMatch(ri, mi) {
   S.rounds[ri].matches[mi].s1 = s1;
   S.rounds[ri].matches[mi].s2 = s2;
   S.rounds[ri].matches[mi].ed = false;
+  const roundDone = S.rounds[ri].matches.every(m => m.s1 !== null);
+  if (roundDone) openRounds.delete(ri);
   save(); renderRounds(); renderStandings();
 }
 
@@ -730,7 +733,11 @@ function renderStandings() {
         <td class="s-pts">${r.w*3+r.d}</td>
       </tr>`).join('')}
       </tbody>
-    </table>`;
+    </table>
+    <p style="font-size:12px;color:var(--muted);margin-top:18px;line-height:1.7">
+      <strong style="color:var(--text)">Pts</strong> = <span style="color:var(--green)">Win</span> ×3 + <span style="color:var(--muted)">Draw</span> ×1 + <span style="color:var(--red)">Loss</span> ×0.<br>
+      Tiebreaker: <strong style="color:var(--text)">+/−</strong> (points scored minus points conceded).
+    </p>`;
 }
 
 /* ═══════════════════════════════════════════
