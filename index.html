@@ -520,7 +520,7 @@ function generate() {
 
   S.rounds = buildRounds(S.teams);
   S.generated = true;
-  openRounds = new Set(S.rounds.map((_, i) => i)); // open all
+  openRounds = new Set([0]); // open first round only
   save();
   renderRounds();
   renderStandings();
