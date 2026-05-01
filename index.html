@@ -600,7 +600,11 @@ function matchHtml(m, ri, mi, court) {
   if (m.s1 !== null && !m.ed) {
     const t1win = m.s1 > m.s2, t2win = m.s2 > m.s1;
     return `<div class="match-card">
-      ${header}
+      <div style="display:flex;align-items:center;margin-bottom:10px">
+        <span class="match-court" style="margin-bottom:0;flex:1">Court ${court}</span>
+        <div class="edit-link" onclick="editMatch(${ri},${mi})" style="margin-right:12px">Edit</div>
+        <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
+      </div>
       <div class="match-played">
         <span class="tn ${t1win?'win':''}">${esc(t1.name)}</span>
         <div class="score-badge">
@@ -610,12 +614,11 @@ function matchHtml(m, ri, mi, court) {
         </div>
         <span class="tn r ${t2win?'win':''}">${esc(t2.name)}</span>
       </div>
-      <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit score</div>
     </div>`;
   }
 
-  const v1 = m.s1 !== null ? m.s1 : '';
-  const v2 = m.s2 !== null ? m.s2 : '';
+  const v1 = '';  // always blank when editing — placeholder shows 0
+  const v2 = '';
   return `<div class="match-card">
     ${header}
     <div class="match-vs">
@@ -635,8 +638,10 @@ function matchHtml(m, ri, mi, court) {
 }
 
 function saveMatch(ri, mi) {
-  const s1 = parseInt(document.getElementById(`s1-${ri}-${mi}`).value);
-  const s2 = parseInt(document.getElementById(`s2-${ri}-${mi}`).value);
+  const raw1 = document.getElementById(`s1-${ri}-${mi}`).value.trim();
+  const raw2 = document.getElementById(`s2-${ri}-${mi}`).value.trim();
+  const s1 = raw1 === '' ? 0 : parseInt(raw1);
+  const s2 = raw2 === '' ? 0 : parseInt(raw2);
   if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0) {
     alert('Enter valid scores for both teams.'); return;
   }
@@ -649,6 +654,13 @@ function saveMatch(ri, mi) {
 function editMatch(ri, mi) {
   S.rounds[ri].matches[mi].ed = true;
   save(); renderRounds();
+}
+
+function deleteMatch(ri, mi) {
+  S.rounds[ri].matches[mi].s1 = null;
+  S.rounds[ri].matches[mi].s2 = null;
+  S.rounds[ri].matches[mi].ed = false;
+  save(); renderRounds(); renderStandings();
 }
 
 /* ═══════════════════════════════════════════
@@ -672,9 +684,14 @@ function computeStandings() {
       else                  { a.d++; b.d++; }
     });
   });
-  return Object.values(map).sort((a, b) =>
-    b.pts !== a.pts ? b.pts - a.pts : (b.w - b.l) - (a.w - a.l)
-  );
+  return Object.values(map).sort((a, b) => {
+    // primary: W=3, D=1, L=0
+    const bScore = b.w * 3 + b.d;
+    const aScore = a.w * 3 + a.d;
+    if (bScore !== aScore) return bScore - aScore;
+    // tiebreaker: point diff (scored - conceded)
+    return (b.pts - b.pa) - (a.pts - a.pa);
+  });
 }
 
 function renderStandings() {
@@ -696,14 +713,21 @@ function renderStandings() {
     `<table class="s-table">
       <thead><tr>
         <th>#  Team</th>
-        <th>P</th><th>W</th><th>L</th>
-        <th>Pts</th>
+        <th>P</th>
+        <th style="color:var(--green)">W</th>
+        <th style="color:var(--muted)">D</th>
+        <th style="color:var(--red)">L</th>
+        <th>+/−</th><th>Pts</th>
       </tr></thead>
       <tbody>
       ${rows.map((r,i) => `<tr>
         <td><span class="rank-num ${rankClass(i)}">${i+1}</span><span class="s-name">${esc(r.name)}</span></td>
-        <td>${r.p}</td><td>${r.w}</td><td>${r.l}</td>
-        <td class="s-pts">${r.pts}</td>
+        <td>${r.p}</td>
+        <td style="color:var(--green);font-weight:700">${r.w}</td>
+        <td style="color:var(--muted);font-weight:700">${r.d}</td>
+        <td style="color:var(--red);font-weight:700">${r.l}</td>
+        <td style="color:${r.pts-r.pa>=0?'var(--green)':'var(--red)'}">${r.pts-r.pa>=0?'+':''}${r.pts-r.pa}</td>
+        <td class="s-pts">${r.w*3+r.d}</td>
       </tr>`).join('')}
       </tbody>
     </table>`;
