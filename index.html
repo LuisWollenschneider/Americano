@@ -307,17 +307,9 @@ body {
   <div class="section-label">Courts available</div>
   <div class="stepper">
     <span class="stepper-label">Number of courts</span>
-    <button class="step-btn" id="courts-minus" onclick="adj('courts',-1)">−</button>
+    <button class="step-btn" id="courts-minus" onclick="adj(-1)">−</button>
     <div class="stepper-val" id="courts-val">2</div>
-    <button class="step-btn" onclick="adj('courts',1)">+</button>
-  </div>
-
-  <div class="section-label">Points per game</div>
-  <div class="stepper">
-    <span class="stepper-label">Game length</span>
-    <button class="step-btn" id="points-minus" onclick="adj('points',-1)">−</button>
-    <div class="stepper-val" id="points-val">11</div>
-    <button class="step-btn" onclick="adj('points',1)">+</button>
+    <button class="step-btn" onclick="adj(1)">+</button>
   </div>
 
   <div class="section-label" id="label-entries">Teams</div>
@@ -377,7 +369,6 @@ let openRounds = new Set(); // in-memory only, not persisted
 let S = {
   mode: 'teams',        // 'teams' | 'singles'
   courts: 2,
-  points: 11,
   teams: [],            // [{id, name}]
   rounds: [],           // [{matches:[{t1,t2,s1,s2,ed}]}]
   generated: false
@@ -442,9 +433,7 @@ function setMode(m) {
 
 function renderSetup() {
   document.getElementById('courts-val').textContent = S.courts;
-  document.getElementById('points-val').textContent = S.points;
   document.getElementById('courts-minus').disabled = S.courts <= 1;
-  document.getElementById('points-minus').disabled = S.points <= 5;
 
   // mode selector
   document.getElementById('mode-singles').classList.toggle('active', S.mode === 'singles');
@@ -469,8 +458,7 @@ function renderSetup() {
 }
 
 function adj(key, d) {
-  if (key === 'courts') S.courts = Math.max(1, S.courts + d);
-  else S.points = Math.max(5, S.points + d);
+  S.courts = Math.max(1, S.courts + d);
   save(); renderSetup();
 }
 
