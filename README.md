@@ -18,6 +18,6 @@ Every team (or player) plays every other team exactly once. Points scored in eac
 - **Round-robin schedule** — generated via the circle method; every participant plays once per round
 - **Bye handling** — odd number of participants? one sits out each round, clearly shown
 - **Score entry** — tap a round, enter scores, save; edit anytime
-- **Live standings** — sorted by total points, tiebroken by win/loss record
+- **Live standings** — sorted by W=3, D=1, L=0 points; tie-break by `points_scored - points_conceded`
 - **Offline-first** — no network needed after first load
 - **Persistent** — scores survive page close via `localStorage`, all on-device
