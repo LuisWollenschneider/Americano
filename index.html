@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="apple-touch-icon" sizes="128x128" href="favicon.ico">
+<link rel="shortcut icon" type="image/png" href="favicon.ico">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -651,6 +653,16 @@ function saveMatch(ri, mi) {
   S.rounds[ri].matches[mi].ed = false;
   const roundDone = S.rounds[ri].matches.every(m => m.s1 !== null);
   if (roundDone) openRounds.delete(ri);
+
+  if (openRounds.size === 0) {
+    const allDone = S.rounds.every(r => r.matches.every(m => m.s1 !== null));
+    if (allDone) {
+      save(); renderRounds(); renderStandings(); goTo('standings'); return;
+    }
+    const next = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
+    if (next !== -1) openRounds.add(next);
+  }
+
   save(); renderRounds(); renderStandings();
 }
 
