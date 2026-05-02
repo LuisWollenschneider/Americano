@@ -79,6 +79,7 @@ body {
   color: var(--text); font-size: 16px; font-family: inherit;
 }
 .input-row input::placeholder { color: var(--muted); }
+.input-row input.error { color: var(--red); animation: shake .3s ease; }
 .del-btn {
   width: 26px; height: 26px; border-radius: 50%;
   background: var(--card2); border: none; color: var(--muted);
@@ -95,6 +96,7 @@ body {
   font-family: inherit; transition: border-color .15s;
 }
 .ghost-btn:active { border-color: var(--accent); color: var(--accent); }
+.ghost-btn.error { border-color: var(--red); color: var(--red); animation: shake .3s ease; }
 
 .primary-btn {
   width: 100%; padding: 15px; border-radius: var(--r);
@@ -319,11 +321,18 @@ body {
   display: flex; gap: 8px; margin-bottom: 20px;
 }
 .save-preset-row input {
-  flex: 1; background: var(--card); border: none; outline: none;
+  flex: 1; background: var(--card); border: 1.5px solid transparent; outline: none;
   border-radius: var(--r); padding: 12px 16px;
   color: var(--text); font-size: 16px; font-family: inherit;
+  transition: border-color .15s;
 }
 .save-preset-row input::placeholder { color: var(--muted); }
+.save-preset-row input.error { border-color: var(--red); animation: shake .3s ease; }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20%      { transform: translateX(-6px); }
+  60%      { transform: translateX(6px); }
+}
 .save-preset-row button {
   padding: 12px 18px; border-radius: var(--r);
   background: var(--accent); border: none; color: #fff;
@@ -343,6 +352,19 @@ body {
   cursor: pointer; font-family: inherit;
   transition: background .15s, color .15s;
 }
+/* ── TOAST ────────────────────────────────────────── */
+.toast {
+  position: fixed; top: 16px; right: 16px; z-index: 999;
+  background: var(--card); border: 1px solid var(--sep);
+  color: var(--text); font-size: 13px; font-weight: 600;
+  padding: 10px 16px; border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+  transform: translateY(-8px); opacity: 0;
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
 .seg-btn.active {
   background: var(--card); color: var(--accent);
   box-shadow: 0 1px 4px rgba(0,0,0,.4);
@@ -387,7 +409,10 @@ body {
     </div>
   </div>
 
-  <div class="section-label" id="label-entries">Teams</div>
+  <div class="section-label" style="display:flex;align-items:center">
+    <span id="label-entries">Teams</span>
+    <button id="clear-btn" onclick="clearTeams()" style="margin-left:auto;margin-right:.5rem;background:none;border:1px dashed var(--red);color:var(--red);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;padding:2px 8px;border-radius:5px;line-height:1.4">Clear</button>
+  </div>
   <div id="teams-list"></div>
   <button class="ghost-btn" id="add-btn" onclick="addTeam()">＋ Add team</button>
 
@@ -454,7 +479,17 @@ body {
   </button>
 </nav>
 
+<div id="toast" class="toast"></div>
+
 <script>
+let _toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
 /* ═══════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════ */
@@ -556,6 +591,7 @@ function renderSetup() {
   // dynamic labels
   document.getElementById('label-entries').textContent = noun() + 's';
   document.getElementById('add-btn').textContent = '＋ Add ' + noun(false);
+  document.getElementById('clear-btn').style.display = S.teams.length ? '' : 'none';
 
   const list = document.getElementById('teams-list');
   list.innerHTML = '';
@@ -587,6 +623,13 @@ function addTeam() {
 
 function removeTeam(i) {
   S.teams.splice(i, 1);
+  save(); renderSetup();
+}
+
+function clearTeams() {
+  if (!S.teams.length) return;
+  if (!confirm(`Remove all ${noun(false)}s?`)) return;
+  S.teams = [];
   save(); renderSetup();
 }
 
@@ -706,15 +749,34 @@ function addMixerRound() {
   save(); renderRounds();
 }
 
+function shakeAddBtn() {
+  const btn = document.getElementById('add-btn');
+  btn.classList.remove('error');
+  void btn.offsetWidth;
+  btn.classList.add('error');
+  setTimeout(() => btn.classList.remove('error'), 600);
+}
+
 function generate() {
   const valid = S.teams.every(t => t.name.trim());
-  if (S.teams.length < 2) { alert('Need at least 2 teams.'); return; }
-  if (!valid) { alert('All teams need a name.'); return; }
+  if (S.teams.length < 2) { shakeAddBtn(); showToast(`Need at least 2 ${noun(false)}s`); return; }
+  if (!valid) {
+    const idx = S.teams.findIndex(t => !t.name.trim());
+    const inputs = document.getElementById('teams-list').querySelectorAll('input');
+    const bad = inputs[idx];
+    if (bad) {
+      bad.classList.remove('error'); void bad.offsetWidth; bad.classList.add('error');
+      bad.focus();
+      setTimeout(() => bad.classList.remove('error'), 600);
+    }
+    showToast(`All ${noun(false)}s need a name`);
+    return;
+  }
   if (S.generated && !confirm('Regenerate will erase all scores. Continue?')) return;
 
   if (S.mode === 'mixer') {
     const minPlayers = S.teamSize * 2;
-    if (S.teams.length < minPlayers) { alert(`Need at least ${minPlayers} players for team size ${S.teamSize}.`); return; }
+    if (S.teams.length < minPlayers) { shakeAddBtn(); showToast(`Need at least ${minPlayers} players for ${S.teamSize}v${S.teamSize}`); return; }
     S.rounds = buildAllMixerRounds(S.teams, S.teamSize, S.numRounds);
   } else {
     S.rounds = buildRounds(S.teams);
@@ -1036,7 +1098,14 @@ function renderStandings() {
 function savePreset() {
   const input = document.getElementById('preset-name-input');
   const name = input.value.trim();
-  if (!name) { input.focus(); return; }
+  if (!name) {
+    input.classList.remove('error');
+    void input.offsetWidth; // force reflow to restart animation
+    input.classList.add('error');
+    input.focus();
+    setTimeout(() => input.classList.remove('error'), 600);
+    return;
+  }
   if (!S.teams.length) { alert('Add at least one entry first.'); return; }
   presets.unshift({
     id: uid(),
@@ -1048,6 +1117,7 @@ function savePreset() {
     teams: S.teams.map(t => ({ id: uid(), name: t.name }))
   });
   savePresets();
+  showToast(`"${name}" saved`);
   input.value = '';
   renderPresets();
 }
