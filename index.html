@@ -203,6 +203,13 @@ body {
 }
 .bye-row strong { color: var(--accent); }
 
+/* ── MIXER MATCH ─────────────────────────────────── */
+.mixer-row { display: flex; align-items: center; gap: 8px; }
+.mixer-team-col { flex: 1; min-width: 0; }
+.mixer-team-col.right { text-align: right; }
+.mixer-player { font-size: 14px; font-weight: 600; padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mixer-player.win { color: var(--green); }
+
 /* ── STANDINGS ────────────────────────────────────────── */
 .progress-bar-wrap {
   background: var(--card2); border-radius: 100px;
@@ -274,6 +281,56 @@ body {
   margin-bottom: 8px;
 }
 
+/* ── PRESETS ──────────────────────────────────────── */
+.preset-item {
+  background: var(--card); border-radius: var(--r);
+  margin-bottom: 8px; overflow: hidden;
+}
+.preset-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; cursor: pointer; user-select: none;
+}
+.preset-info { flex: 1; min-width: 0; }
+.preset-name { font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+.preset-meta { font-size: 12px; color: var(--muted); }
+.preset-chevron { color: var(--muted); transition: transform .2s; flex-shrink: 0; }
+.preset-item.open .preset-chevron { transform: rotate(180deg); }
+.preset-body { display: none; padding: 0 16px 14px; }
+.preset-item.open .preset-body { display: block; }
+.preset-names {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.preset-tag {
+  padding: 4px 10px; border-radius: 100px;
+  background: var(--card2); font-size: 13px; color: var(--text);
+}
+.preset-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.preset-load-btn {
+  padding: 7px 14px; border-radius: 8px;
+  background: var(--accent); border: none; color: #fff;
+  font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.preset-del-btn {
+  padding: 7px 10px; border-radius: 8px;
+  background: var(--card2); border: none; color: var(--red);
+  font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.save-preset-row {
+  display: flex; gap: 8px; margin-bottom: 20px;
+}
+.save-preset-row input {
+  flex: 1; background: var(--card); border: none; outline: none;
+  border-radius: var(--r); padding: 12px 16px;
+  color: var(--text); font-size: 16px; font-family: inherit;
+}
+.save-preset-row input::placeholder { color: var(--muted); }
+.save-preset-row button {
+  padding: 12px 18px; border-radius: var(--r);
+  background: var(--accent); border: none; color: #fff;
+  font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+  white-space: nowrap;
+}
+
 /* ── MODE SELECTOR ────────────────────────────────── */
 .seg {
   display: flex; background: var(--card2); border-radius: var(--r);
@@ -302,14 +359,32 @@ body {
   <div class="seg">
     <button class="seg-btn" id="mode-singles" onclick="setMode('singles')">Singles</button>
     <button class="seg-btn" id="mode-teams"   onclick="setMode('teams')">Teams</button>
+    <button class="seg-btn" id="mode-mixer"   onclick="setMode('mixer')">Mixer</button>
   </div>
 
   <div class="section-label">Courts available</div>
   <div class="stepper">
     <span class="stepper-label">Number of courts</span>
-    <button class="step-btn" id="courts-minus" onclick="adj(-1)">−</button>
+    <button class="step-btn" id="courts-minus" onclick="adj('courts',-1)">−</button>
     <div class="stepper-val" id="courts-val">2</div>
-    <button class="step-btn" onclick="adj(1)">+</button>
+    <button class="step-btn" onclick="adj('courts',1)">+</button>
+  </div>
+
+  <div id="mixer-settings" style="display:none">
+    <div class="section-label">Team size</div>
+    <div class="stepper">
+      <span class="stepper-label">Players per team</span>
+      <button class="step-btn" id="teamsize-minus" onclick="adj('teamSize',-1)">−</button>
+      <div class="stepper-val" id="teamsize-val">2</div>
+      <button class="step-btn" onclick="adj('teamSize',1)">+</button>
+    </div>
+    <div class="section-label">Rounds to generate</div>
+    <div class="stepper">
+      <span class="stepper-label">Number of rounds</span>
+      <button class="step-btn" id="numrounds-minus" onclick="adj('numRounds',-1)">−</button>
+      <div class="stepper-val" id="numrounds-val">4</div>
+      <button class="step-btn" onclick="adj('numRounds',1)">+</button>
+    </div>
   </div>
 
   <div class="section-label" id="label-entries">Teams</div>
@@ -318,6 +393,13 @@ body {
 
   <button class="primary-btn" id="gen-btn" onclick="generate()">Generate schedule</button>
   <button class="danger-btn" id="reset-btn" style="display:none" onclick="resetTournament()">↺ Reset &amp; start over</button>
+
+  <div class="section-label">Save as preset</div>
+  <div class="save-preset-row">
+    <input type="text" id="preset-name-input" placeholder="Preset name…"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();savePreset();}">
+    <button onclick="savePreset()">Save</button>
+  </div>
 </div>
 
 <!-- ──────────────── ROUNDS ──────────────── -->
@@ -330,6 +412,12 @@ body {
 <div id="screen-standings" class="screen">
   <div class="page-title">Standings</div>
   <div id="standings-content"></div>
+</div>
+
+<!-- ──────────────── PRESETS ──────────────── -->
+<div id="screen-presets" class="screen">
+  <div class="page-title">Presets</div>
+  <div id="presets-list"></div>
 </div>
 
 <!-- ──────────────── NAV ──────────────── -->
@@ -358,6 +446,12 @@ body {
     </svg>
     Standings
   </button>
+  <button class="nav-btn" id="nav-presets" onclick="goTo('presets')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+    </svg>
+    Presets
+  </button>
 </nav>
 
 <script>
@@ -367,14 +461,22 @@ body {
 let openRounds = new Set(); // in-memory only, not persisted
 
 let S = {
-  mode: 'teams',        // 'teams' | 'singles'
+  mode: 'teams',        // 'teams' | 'singles' | 'mixer'
   courts: 2,
-  teams: [],            // [{id, name}]
-  rounds: [],           // [{matches:[{t1,t2,s1,s2,ed}]}]
+  teamSize: 2,          // mixer only: players per team
+  numRounds: 4,         // mixer only: rounds to generate upfront
+  teams: [],            // [{id, name}]  — players in mixer mode
+  rounds: [],           // standard: [{matches:[{t1,t2,s1,s2,ed}], bye}]
+                        // mixer:    [{matches:[{team1:[],team2:[],s1,s2,ed}], byes:[]}]
   generated: false
 };
 
 const STORE = 'americano_v2';
+const PRESETS_STORE = 'americano_presets_v1';
+let presets = [];
+let openPresets = new Set();
+function savePresets() { try { localStorage.setItem(PRESETS_STORE, JSON.stringify(presets)); } catch(e){} }
+function loadPresets() { try { const r = localStorage.getItem(PRESETS_STORE); if (r) presets = JSON.parse(r); } catch(e){} }
 function save() {
   try {
     const data = { ...S, rounds: S.rounds.map(r => ({
@@ -394,13 +496,15 @@ function load() {
    BOOT
 ═══════════════════════════════════════════ */
 load();
+loadPresets();
 const firstIncomplete = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
 if (firstIncomplete !== -1) openRounds.add(firstIncomplete);
 renderSetup();
 renderRounds();
 renderStandings();
+renderPresets();
 const savedTab = sessionStorage.getItem('tab') || 'setup';
-goTo(!S.generated && savedTab !== 'setup' ? 'setup' : savedTab);
+goTo(!S.generated && ['rounds','standings'].includes(savedTab) ? 'setup' : savedTab);
 if (S.generated) {
   document.getElementById('reset-btn').style.display = '';
   document.getElementById('gen-btn').textContent = 'Regenerate schedule';
@@ -410,12 +514,13 @@ if (S.generated) {
    NAV
 ═══════════════════════════════════════════ */
 function goTo(name) {
-  ['setup','rounds','standings'].forEach(n => {
+  ['setup','rounds','standings','presets'].forEach(n => {
     document.getElementById('screen-'+n).classList.toggle('active', n===name);
     document.getElementById('nav-'+n).classList.toggle('active', n===name);
   });
   sessionStorage.setItem('tab', name);
   if (name === 'standings') renderStandings();
+  if (name === 'presets') renderPresets();
 }
 
 /* ═══════════════════════════════════════════
@@ -423,7 +528,7 @@ function goTo(name) {
 ═══════════════════════════════════════════ */
 // 'Team' or 'Player' depending on mode
 function noun(cap = true) {
-  const w = S.mode === 'singles' ? 'player' : 'team';
+  const w = (S.mode === 'singles' || S.mode === 'mixer') ? 'player' : 'team';
   return cap ? w[0].toUpperCase() + w.slice(1) : w;
 }
 
@@ -438,6 +543,15 @@ function renderSetup() {
   // mode selector
   document.getElementById('mode-singles').classList.toggle('active', S.mode === 'singles');
   document.getElementById('mode-teams').classList.toggle('active',   S.mode === 'teams');
+  document.getElementById('mode-mixer').classList.toggle('active', S.mode === 'mixer');
+  const isMixer = S.mode === 'mixer';
+  document.getElementById('mixer-settings').style.display = isMixer ? '' : 'none';
+  if (isMixer) {
+    document.getElementById('teamsize-val').textContent = S.teamSize;
+    document.getElementById('teamsize-minus').disabled = S.teamSize <= 2;
+    document.getElementById('numrounds-val').textContent = S.numRounds;
+    document.getElementById('numrounds-minus').disabled = S.numRounds <= 1;
+  }
 
   // dynamic labels
   document.getElementById('label-entries').textContent = noun() + 's';
@@ -457,8 +571,10 @@ function renderSetup() {
   });
 }
 
-function adj(d) {
-  S.courts = Math.max(1, S.courts + d);
+function adj(key, d) {
+  if (key === 'courts')         S.courts    = Math.max(1, S.courts    + d);
+  else if (key === 'teamSize')  S.teamSize  = Math.max(2, S.teamSize  + d);
+  else if (key === 'numRounds') S.numRounds = Math.max(1, S.numRounds + d);
   save(); renderSetup();
 }
 
@@ -502,13 +618,107 @@ function buildRounds(teams) {
   return rounds;
 }
 
+/* ═══════════════════════════════════════════
+   MIXER GENERATION
+═══════════════════════════════════════════ */
+function pairKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function buildPairHistory(existingRounds) {
+  const teammates = {}, opponents = {};
+  for (const round of existingRounds) {
+    for (const m of round.matches) {
+      if (!m.team1) continue;
+      for (const team of [m.team1, m.team2]) {
+        for (let i = 0; i < team.length; i++)
+          for (let j = i + 1; j < team.length; j++) {
+            const k = pairKey(team[i], team[j]);
+            teammates[k] = (teammates[k] || 0) + 1;
+          }
+      }
+      for (const a of m.team1) for (const b of m.team2) {
+        const k = pairKey(a, b);
+        opponents[k] = (opponents[k] || 0) + 1;
+      }
+    }
+  }
+  return { teammates, opponents };
+}
+
+function scoreMixerGroups(groups, history) {
+  let score = 0;
+  for (const g of groups) {
+    for (const team of [g.team1, g.team2]) {
+      for (let i = 0; i < team.length; i++)
+        for (let j = i + 1; j < team.length; j++)
+          score += (history.teammates[pairKey(team[i], team[j])] || 0) * 10;
+    }
+    for (const a of g.team1) for (const b of g.team2)
+      score += (history.opponents[pairKey(a, b)] || 0);
+  }
+  return score;
+}
+
+function buildMixerRound(players, teamSize, existingRounds) {
+  const ids = players.map(p => p.id);
+  const perMatch = teamSize * 2;
+  const numMatches = Math.floor(ids.length / perMatch);
+  const history = buildPairHistory(existingRounds);
+
+  let best = null, bestScore = Infinity;
+  for (let attempt = 0; attempt < 600; attempt++) {
+    const perm = shuffle([...ids]);
+    const playing = perm.slice(0, numMatches * perMatch);
+    const byes    = perm.slice(numMatches * perMatch);
+    const groups  = [];
+    for (let i = 0; i < numMatches; i++) {
+      const g = playing.slice(i * perMatch, (i + 1) * perMatch);
+      groups.push({ team1: g.slice(0, teamSize), team2: g.slice(teamSize) });
+    }
+    const score = scoreMixerGroups(groups, history);
+    if (score < bestScore) { bestScore = score; best = { groups, byes }; }
+  }
+
+  return {
+    matches: best.groups.map(g => ({ team1: g.team1, team2: g.team2, s1: null, s2: null, ed: false })),
+    byes: best.byes
+  };
+}
+
+function buildAllMixerRounds(players, teamSize, numRounds) {
+  const rounds = [];
+  for (let r = 0; r < numRounds; r++)
+    rounds.push(buildMixerRound(players, teamSize, rounds));
+  return rounds;
+}
+
+function addMixerRound() {
+  const newRound = buildMixerRound(S.teams, S.teamSize, S.rounds);
+  S.rounds.push(newRound);
+  openRounds.add(S.rounds.length - 1);
+  save(); renderRounds();
+}
+
 function generate() {
   const valid = S.teams.every(t => t.name.trim());
   if (S.teams.length < 2) { alert('Need at least 2 teams.'); return; }
   if (!valid) { alert('All teams need a name.'); return; }
   if (S.generated && !confirm('Regenerate will erase all scores. Continue?')) return;
 
-  S.rounds = buildRounds(S.teams);
+  if (S.mode === 'mixer') {
+    const minPlayers = S.teamSize * 2;
+    if (S.teams.length < minPlayers) { alert(`Need at least ${minPlayers} players for team size ${S.teamSize}.`); return; }
+    S.rounds = buildAllMixerRounds(S.teams, S.teamSize, S.numRounds);
+  } else {
+    S.rounds = buildRounds(S.teams);
+  }
   S.generated = true;
   openRounds = new Set([0]); // open first round only
   save();
@@ -552,10 +762,14 @@ function renderRounds() {
                      : inProg  ? '⏳ In progress'
                      : `${total} match${total !== 1 ? 'es' : ''}`;
 
-    const byeTeam = round.bye ? teamById(round.bye) : null;
-    const byeHtml = byeTeam
-      ? `<div class="bye-row">💤 <strong>${esc(byeTeam.name)}</strong> has a bye this round</div>`
-      : '';
+    let byeHtml = '';
+    if (round.byes && round.byes.length > 0) {
+      const names = round.byes.map(id => teamById(id)?.name).filter(Boolean).map(esc);
+      if (names.length) byeHtml = `<div class="bye-row">💤 <strong>${names.join(', ')}</strong> ${names.length === 1 ? 'has' : 'have'} a bye this round</div>`;
+    } else if (round.bye) {
+      const byeTeam = teamById(round.bye);
+      if (byeTeam) byeHtml = `<div class="bye-row">💤 <strong>${esc(byeTeam.name)}</strong> has a bye this round</div>`;
+    }
 
     const bodyHtml = ms.map((m, mi) =>
       matchHtml(m, ri, mi, (mi % S.courts) + 1)
@@ -574,6 +788,15 @@ function renderRounds() {
 
     el.appendChild(card);
   });
+
+  if (S.mode === 'mixer') {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'ghost-btn';
+    addBtn.style.marginTop = '4px';
+    addBtn.textContent = '＋ Add round';
+    addBtn.onclick = addMixerRound;
+    el.appendChild(addBtn);
+  }
 }
 
 function toggleSlot(ri) {
@@ -583,6 +806,7 @@ function toggleSlot(ri) {
 }
 
 function matchHtml(m, ri, mi, court) {
+  if (m.team1) return mixerMatchHtml(m, ri, mi, court);
   const t1 = teamById(m.t1), t2 = teamById(m.t2);
   if (!t1 || !t2) return '';
 
@@ -616,6 +840,59 @@ function matchHtml(m, ri, mi, court) {
       <span class="tn">${esc(t1.name)}</span>
       <span class="vs-tag">vs</span>
       <span class="tn r">${esc(t2.name)}</span>
+    </div>
+    <div class="score-row">
+      <input class="score-input" type="text" inputmode="decimal" pattern="[0-9]*"
+        placeholder="0" value="${v1}" id="s1-${ri}-${mi}" autocomplete="off">
+      <span class="score-dash">–</span>
+      <input class="score-input" type="text" inputmode="decimal" pattern="[0-9]*"
+        placeholder="0" value="${v2}" id="s2-${ri}-${mi}" autocomplete="off">
+    </div>
+    <button class="save-btn" onclick="saveMatch(${ri},${mi})">Save score</button>
+  </div>`;
+}
+
+function mixerMatchHtml(m, ri, mi, court) {
+  const team1 = m.team1.map(id => teamById(id)).filter(Boolean);
+  const team2 = m.team2.map(id => teamById(id)).filter(Boolean);
+  if (!team1.length || !team2.length) return '';
+
+  if (m.s1 !== null && !m.ed) {
+    const t1win = m.s1 > m.s2, t2win = m.s2 > m.s1;
+    return `<div class="match-card">
+      <div style="display:flex;align-items:center;margin-bottom:10px">
+        <span class="match-court" style="margin-bottom:0;flex:1">Court ${court}</span>
+        <div class="edit-link" onclick="editMatch(${ri},${mi})" style="margin-right:12px">Edit</div>
+        <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
+      </div>
+      <div class="mixer-row">
+        <div class="mixer-team-col">
+          ${team1.map(p => `<div class="mixer-player ${t1win?'win':''}">${esc(p.name)}</div>`).join('')}
+        </div>
+        <div class="score-badge" style="flex-shrink:0">
+          <span class="sc ${t1win?'win':''}">${m.s1}</span>
+          <span class="dash">–</span>
+          <span class="sc ${t2win?'win':''}">${m.s2}</span>
+        </div>
+        <div class="mixer-team-col right">
+          ${team2.map(p => `<div class="mixer-player ${t2win?'win':''}">${esc(p.name)}</div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const v1 = (m.s1 !== null && m.s1 !== 0) ? m.s1 : '';
+  const v2 = (m.s2 !== null && m.s2 !== 0) ? m.s2 : '';
+  return `<div class="match-card">
+    <div class="match-court">Court ${court}</div>
+    <div class="mixer-row" style="margin-bottom:10px">
+      <div class="mixer-team-col">
+        ${team1.map(p => `<div class="mixer-player">${esc(p.name)}</div>`).join('')}
+      </div>
+      <span class="vs-tag" style="flex-shrink:0">vs</span>
+      <div class="mixer-team-col right">
+        ${team2.map(p => `<div class="mixer-player">${esc(p.name)}</div>`).join('')}
+      </div>
     </div>
     <div class="score-row">
       <input class="score-input" type="text" inputmode="decimal" pattern="[0-9]*"
@@ -677,22 +954,35 @@ function computeStandings() {
   S.rounds.forEach(round => {
     round.matches.forEach(m => {
       if (m.s1 === null) return;
-      const a = map[m.t1], b = map[m.t2];
-      if (!a || !b) return;
-      a.p++; b.p++;
-      a.pts += m.s1; b.pts += m.s2;
-      a.pa  += m.s2; b.pa  += m.s1;
-      if      (m.s1 > m.s2) { a.w++; b.l++; }
-      else if (m.s2 > m.s1) { b.w++; a.l++; }
-      else                  { a.d++; b.d++; }
+      if (m.team1) {
+        // mixer: each player on the team shares the result
+        const res = m.s1 > m.s2 ? 1 : m.s2 > m.s1 ? 2 : 0;
+        for (const id of m.team1) {
+          const a = map[id]; if (!a) continue;
+          a.p++; a.pts += m.s1; a.pa += m.s2;
+          if (res === 1) a.w++; else if (res === 2) a.l++; else a.d++;
+        }
+        for (const id of m.team2) {
+          const b = map[id]; if (!b) continue;
+          b.p++; b.pts += m.s2; b.pa += m.s1;
+          if (res === 2) b.w++; else if (res === 1) b.l++; else b.d++;
+        }
+      } else {
+        const a = map[m.t1], b = map[m.t2];
+        if (!a || !b) return;
+        a.p++; b.p++;
+        a.pts += m.s1; b.pts += m.s2;
+        a.pa  += m.s2; b.pa  += m.s1;
+        if      (m.s1 > m.s2) { a.w++; b.l++; }
+        else if (m.s2 > m.s1) { b.w++; a.l++; }
+        else                  { a.d++; b.d++; }
+      }
     });
   });
   return Object.values(map).sort((a, b) => {
-    // primary: W=3, D=1, L=0
     const bScore = b.w * 3 + b.d;
     const aScore = a.w * 3 + a.d;
     if (bScore !== aScore) return bScore - aScore;
-    // tiebreaker: point diff (scored - conceded)
     return (b.pts - b.pa) - (a.pts - a.pa);
   });
 }
@@ -715,7 +1005,7 @@ function renderStandings() {
     `<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` +
     `<table class="s-table">
       <thead><tr>
-        <th>#  Team</th>
+        <th>#  ${S.mode === 'mixer' ? 'Player' : noun()}</th>
         <th>P</th>
         <th style="color:var(--green)">W</th>
         <th style="color:var(--muted)">D</th>
@@ -738,6 +1028,93 @@ function renderStandings() {
       <strong style="color:var(--text)">Pts</strong> = <span style="color:var(--green)">Win</span> ×3 + <span style="color:var(--muted)">Draw</span> ×1 + <span style="color:var(--red)">Loss</span> ×0.<br>
       Tiebreaker: <strong style="color:var(--text)">+/−</strong> (points scored minus points conceded).
     </p>`;
+}
+
+/* ═══════════════════════════════════════════
+   PRESETS
+═══════════════════════════════════════════ */
+function savePreset() {
+  const input = document.getElementById('preset-name-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  if (!S.teams.length) { alert('Add at least one entry first.'); return; }
+  presets.unshift({
+    id: uid(),
+    name,
+    mode: S.mode,
+    courts: S.courts,
+    teamSize: S.teamSize,
+    numRounds: S.numRounds,
+    teams: S.teams.map(t => ({ id: uid(), name: t.name }))
+  });
+  savePresets();
+  input.value = '';
+  renderPresets();
+}
+
+function loadPreset(id) {
+  const p = presets.find(x => x.id === id);
+  if (!p) return;
+  if (S.generated && !confirm('Loading preset will reset the current tournament. Continue?')) return;
+  S.mode      = p.mode;
+  S.courts    = p.courts;
+  S.teamSize  = p.teamSize  ?? 2;
+  S.numRounds = p.numRounds ?? 4;
+  S.teams     = p.teams.map(t => ({ id: uid(), name: t.name }));
+  S.rounds    = [];
+  S.generated = false;
+  save();
+  document.getElementById('reset-btn').style.display = 'none';
+  document.getElementById('gen-btn').textContent = 'Generate schedule';
+  renderSetup();
+  renderRounds();
+  renderStandings();
+  goTo('setup');
+}
+
+function deletePreset(id) {
+  presets = presets.filter(p => p.id !== id);
+  savePresets();
+  renderPresets();
+}
+
+function togglePreset(id) {
+  if (openPresets.has(id)) openPresets.delete(id);
+  else openPresets.add(id);
+  document.getElementById(`preset-${id}`).classList.toggle('open');
+}
+
+function renderPresets() {
+  const el = document.getElementById('presets-list');
+  if (!el) return;
+  if (!presets.length) {
+    el.innerHTML = '<div class="empty" style="padding:30px 0"><strong>No presets yet.</strong><br>Configure a setup in the Setup tab and save it.</div>';
+    return;
+  }
+  const modeLabel = m => m === 'singles' ? 'Singles' : m === 'mixer' ? 'Mixer' : 'Teams';
+  el.innerHTML = presets.map(p => {
+    const noun = p.mode === 'teams' ? 'team' : 'player';
+    const meta = `${modeLabel(p.mode)} · ${p.courts} court${p.courts !== 1 ? 's' : ''} · ${p.teams.length} ${noun}${p.teams.length !== 1 ? 's' : ''}` +
+      (p.mode === 'mixer' ? ` · ${p.teamSize}v${p.teamSize}` : '');
+    const tags = p.teams.map(t => `<span class="preset-tag">${esc(t.name)}</span>`).join('');
+    const isOpen = openPresets.has(p.id);
+    return `<div class="preset-item${isOpen ? ' open' : ''}" id="preset-${p.id}">
+      <div class="preset-header" onclick="togglePreset('${p.id}')">
+        <div class="preset-info">
+          <div class="preset-name">${esc(p.name)}</div>
+          <div class="preset-meta">${esc(meta)}</div>
+        </div>
+        <div class="preset-actions" onclick="event.stopPropagation()">
+          <button class="preset-load-btn" onclick="loadPreset('${p.id}')">Load</button>
+          <button class="preset-del-btn" onclick="deletePreset('${p.id}')">✕</button>
+        </div>
+        <svg class="preset-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="preset-body">
+        <div class="preset-names">${tags}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 /* ═══════════════════════════════════════════
