@@ -457,7 +457,7 @@ function renderSetup() {
   });
 }
 
-function adj(key, d) {
+function adj(d) {
   S.courts = Math.max(1, S.courts + d);
   save(); renderSetup();
 }
