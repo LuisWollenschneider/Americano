@@ -138,6 +138,15 @@ body {
 .slot-card.open .slot-chevron { transform: rotate(180deg); }
 .slot-body { display: none; padding: 0 10px 10px; }
 .slot-card.open .slot-body { display: block; }
+.match-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.match-grid .last-row-wrap {
+  grid-column: 1 / -1;
+  display: flex; justify-content: center; gap: 10px;
+}
 
 .match-card {
   background: var(--card2); border-radius: 10px;
@@ -674,9 +683,13 @@ function shuffle(arr) {
   return arr;
 }
 
-function buildPairHistory(existingRounds) {
-  const teammates = {}, opponents = {};
-  for (const round of existingRounds) {
+function buildPairHistory(players, existingRounds) {
+  const teammates = {}, opponents = {}, lastTeammates = {}, lastByes = new Set();
+  const byeCount = {};
+  players.forEach(p => { byeCount[p.id] = 0; });
+
+  existingRounds.forEach((round, ri) => {
+    const isLast = ri === existingRounds.length - 1;
     for (const m of round.matches) {
       if (!m.team1) continue;
       for (const team of [m.team1, m.team2]) {
@@ -684,6 +697,7 @@ function buildPairHistory(existingRounds) {
           for (let j = i + 1; j < team.length; j++) {
             const k = pairKey(team[i], team[j]);
             teammates[k] = (teammates[k] || 0) + 1;
+            if (isLast) lastTeammates[k] = true;
           }
       }
       for (const a of m.team1) for (const b of m.team2) {
@@ -691,32 +705,48 @@ function buildPairHistory(existingRounds) {
         opponents[k] = (opponents[k] || 0) + 1;
       }
     }
-  }
-  return { teammates, opponents };
+    if (round.byes) round.byes.forEach(id => {
+      byeCount[id] = (byeCount[id] || 0) + 1;
+      if (isLast) lastByes.add(id);
+    });
+  });
+
+  const minByes = Math.min(...Object.values(byeCount));
+  return { teammates, opponents, lastTeammates, lastByes, byeCount, minByes };
 }
 
-function scoreMixerGroups(groups, history) {
+function scoreMixerGroups(groups, byes, history) {
   let score = 0;
   for (const g of groups) {
     for (const team of [g.team1, g.team2]) {
       for (let i = 0; i < team.length; i++)
-        for (let j = i + 1; j < team.length; j++)
-          score += (history.teammates[pairKey(team[i], team[j])] || 0) * 10;
+        for (let j = i + 1; j < team.length; j++) {
+          const k = pairKey(team[i], team[j]);
+          score += history.lastTeammates[k] ? 200 : (history.teammates[k] || 0) * 10;
+        }
     }
     for (const a of g.team1) for (const b of g.team2)
       score += (history.opponents[pairKey(a, b)] || 0);
+  }
+  // bye balance: penalize anyone with more byes than the current minimum
+  // ×2000 per extra bye ensures balanced distribution before anything else
+  for (const id of byes) {
+    const over = (history.byeCount[id] || 0) - history.minByes;
+    score += (over + 1) * 2000;
+    if (history.lastByes.has(id)) score += 2000; // consecutive = double penalty
   }
   return score;
 }
 
 function buildMixerRound(players, teamSize, existingRounds) {
-  const ids = players.map(p => p.id);
+  // shuffle input so identical configs produce different schedules
+  const ids = shuffle(players.map(p => p.id));
   const perMatch = teamSize * 2;
   const numMatches = Math.floor(ids.length / perMatch);
-  const history = buildPairHistory(existingRounds);
+  const history = buildPairHistory(players, existingRounds);
 
   let best = null, bestScore = Infinity;
-  for (let attempt = 0; attempt < 600; attempt++) {
+  for (let attempt = 0; attempt < 1000; attempt++) {
     const perm = shuffle([...ids]);
     const playing = perm.slice(0, numMatches * perMatch);
     const byes    = perm.slice(numMatches * perMatch);
@@ -725,8 +755,11 @@ function buildMixerRound(players, teamSize, existingRounds) {
       const g = playing.slice(i * perMatch, (i + 1) * perMatch);
       groups.push({ team1: g.slice(0, teamSize), team2: g.slice(teamSize) });
     }
-    const score = scoreMixerGroups(groups, history);
-    if (score < bestScore) { bestScore = score; best = { groups, byes }; }
+    const score = scoreMixerGroups(groups, byes, history);
+    // on tie, randomly replace so equally-good solutions vary
+    if (score < bestScore || (score === bestScore && Math.random() < 0.3)) {
+      bestScore = score; best = { groups, byes };
+    }
   }
 
   return {
@@ -803,6 +836,35 @@ function resetTournament() {
 /* ═══════════════════════════════════════════
    ROUNDS RENDER
 ═══════════════════════════════════════════ */
+function renderRoundsPreserving() {
+  const snap = {};
+  document.querySelectorAll('[id^="s1-"],[id^="s2-"]').forEach(el => { snap[el.id] = el.value; });
+  renderRounds();
+  Object.entries(snap).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; });
+}
+
+function fixLastRows() {
+  document.querySelectorAll('.match-grid').forEach(grid => {
+    // unwrap any previous run
+    grid.querySelectorAll('.last-row-wrap').forEach(wrap => {
+      [...wrap.children].forEach(c => { c.style.width = ''; c.style.flex = ''; grid.insertBefore(c, wrap); });
+      wrap.remove();
+    });
+    if (!grid.offsetWidth) return; // skip collapsed/hidden rounds
+    const cards = [...grid.children].filter(el => el.classList.contains('match-card'));
+    if (cards.length < 2) return;
+    const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+    if (cols < 2) return;
+    const rem = cards.length % cols;
+    if (rem === 0) return;
+    const cardWidth = cards[0].offsetWidth;
+    const wrap = document.createElement('div');
+    wrap.className = 'last-row-wrap';
+    cards.slice(-rem).forEach(c => { c.style.width = cardWidth + 'px'; c.style.flex = 'none'; wrap.appendChild(c); });
+    grid.appendChild(wrap);
+  });
+}
+
 function renderRounds() {
   const el = document.getElementById('rounds-content');
   if (!S.generated || !S.rounds.length) {
@@ -820,8 +882,8 @@ function renderRounds() {
     const allDone = played === total && !editing;
     const inProg  = (played > 0 && !allDone) || editing;
 
-    const statusText = allDone ? '✓ Done'
-                     : inProg  ? '⏳ In progress'
+    const statusText = allDone ? '<span style="color:var(--green)">✓</span> Done'
+                     : inProg  ? '<span style="color:var(--accent)">In progress</span>'
                      : `${total} match${total !== 1 ? 'es' : ''}`;
 
     let byeHtml = '';
@@ -846,7 +908,7 @@ function renderRounds() {
         `<span class="slot-status">${statusText}</span>` +
         `<svg class="slot-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</div>` +
-      `<div class="slot-body">${byeHtml}${bodyHtml}</div>`;
+      `<div class="slot-body">${byeHtml}<div class="match-grid">${bodyHtml}</div></div>`;
 
     el.appendChild(card);
   });
@@ -859,12 +921,15 @@ function renderRounds() {
     addBtn.onclick = addMixerRound;
     el.appendChild(addBtn);
   }
+
+  setTimeout(fixLastRows, 0);
 }
 
 function toggleSlot(ri) {
   if (openRounds.has(ri)) openRounds.delete(ri);
   else openRounds.add(ri);
   document.getElementById(`slot-${ri}`).classList.toggle('open');
+  if (openRounds.has(ri)) setTimeout(fixLastRows, 0);
 }
 
 function matchHtml(m, ri, mi, court) {
@@ -984,13 +1049,13 @@ function saveMatch(ri, mi) {
   if (openRounds.size === 0) {
     const allDone = S.rounds.every(r => r.matches.every(m => m.s1 !== null));
     if (allDone) {
-      save(); renderRounds(); renderStandings(); goTo('standings'); return;
+      save(); renderRoundsPreserving(); renderStandings(); goTo('standings'); return;
     }
     const next = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
     if (next !== -1) openRounds.add(next);
   }
 
-  save(); renderRounds(); renderStandings();
+  save(); renderRoundsPreserving(); renderStandings();
 }
 
 function editMatch(ri, mi) {
@@ -1191,6 +1256,12 @@ function renderPresets() {
    UTILS
 ═══════════════════════════════════════════ */
 function teamById(id) { return S.teams.find(t => t.id === id); }
+
+let _resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => { renderRounds(); }, 150);
+});
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function esc(s) {
   return String(s)
