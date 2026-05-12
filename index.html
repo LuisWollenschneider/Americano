@@ -151,6 +151,7 @@ body {
 .match-card {
   background: var(--card2); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 8px; overflow: hidden;
+  border: 1.5px solid transparent;
 }
 .match-court {
   font-size: 11px; color: var(--muted); font-weight: 600;
@@ -202,6 +203,38 @@ body {
   font-family: inherit; transition: opacity .1s;
 }
 .save-btn:active { opacity: .8; }
+
+/* ── IN-PLAY ──────────────────────────────────────── */
+.match-inplay { border-color: var(--green); }
+.match-waiting { opacity: .45; pointer-events: none; }
+.match-waiting .save-btn, .match-waiting input { pointer-events: none; }
+.match-header {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; margin-bottom: 10px; gap: 6px;
+}
+.match-header .match-court { text-align: center; margin-bottom: 0; }
+.match-header > :last-child { justify-self: end; display: flex; gap: 10px; align-items: center; }
+.inplay-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; color: var(--green);
+  text-transform: uppercase; letter-spacing: .5px; flex: 1;
+}
+.inplay-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0;
+  animation: ipulse 1.2s ease-in-out infinite;
+}
+@keyframes ipulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+.waiting-badge {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
+}
+.inplay-btn {
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  border: 1px solid currentColor; border-radius: 5px;
+  background: none; font-family: inherit; padding: 2px 8px; flex-shrink: 0;
+  color: var(--muted); transition: color .15s, border-color .15s;
+}
+.inplay-btn.on { color: var(--red); }
 
 /* bye row */
 .bye-row {
@@ -895,8 +928,16 @@ function renderRounds() {
       if (byeTeam) byeHtml = `<div class="bye-row">💤 <strong>${esc(byeTeam.name)}</strong> has a bye this round</div>`;
     }
 
+    // IDs currently in-play across ALL rounds (for conflict detection)
+    const inPlayIds = new Set();
+    S.rounds.forEach(r => r.matches.forEach(mx => {
+      if (!mx.ip || mx.s1 !== null) return;
+      if (mx.team1) { mx.team1.forEach(id => inPlayIds.add(id)); mx.team2.forEach(id => inPlayIds.add(id)); }
+      else { inPlayIds.add(mx.t1); inPlayIds.add(mx.t2); }
+    }));
+
     const bodyHtml = ms.map((m, mi) =>
-      matchHtml(m, ri, mi, (mi % S.courts) + 1)
+      matchHtml(m, ri, mi, (mi % S.courts) + 1, inPlayIds)
     ).join('');
 
     const card = document.createElement('div');
@@ -932,20 +973,21 @@ function toggleSlot(ri) {
   if (openRounds.has(ri)) setTimeout(fixLastRows, 0);
 }
 
-function matchHtml(m, ri, mi, court) {
-  if (m.team1) return mixerMatchHtml(m, ri, mi, court);
+function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
+  if (m.team1) return mixerMatchHtml(m, ri, mi, court, inPlayIds);
   const t1 = teamById(m.t1), t2 = teamById(m.t2);
   if (!t1 || !t2) return '';
-
-  const header = `<div class="match-court">Court ${court}</div>`;
 
   if (m.s1 !== null && !m.ed) {
     const t1win = m.s1 > m.s2, t2win = m.s2 > m.s1;
     return `<div class="match-card">
-      <div style="display:flex;align-items:center;margin-bottom:10px">
-        <span class="match-court" style="margin-bottom:0;flex:1">Court ${court}</span>
-        <div class="edit-link" onclick="editMatch(${ri},${mi})" style="margin-right:12px">Edit</div>
-        <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
+      <div class="match-header">
+        <div></div>
+        <span class="match-court">Court ${court}</span>
+        <div>
+          <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit</div>
+          <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
+        </div>
       </div>
       <div class="match-played">
         <span class="tn ${t1win?'win':''}">${esc(t1.name)}</span>
@@ -959,10 +1001,21 @@ function matchHtml(m, ri, mi, court) {
     </div>`;
   }
 
+  const isInPlay = !!m.ip;
+  const isWaiting = !isInPlay && (inPlayIds.has(m.t1) || inPlayIds.has(m.t2));
+  const cardClass = isInPlay ? 'match-card match-inplay' : isWaiting ? 'match-card match-waiting' : 'match-card';
   const v1 = (m.s1 !== null && m.s1 !== 0) ? m.s1 : '';
   const v2 = (m.s2 !== null && m.s2 !== 0) ? m.s2 : '';
-  return `<div class="match-card">
-    ${header}
+  return `<div class="${cardClass}">
+    <div class="match-header">
+      ${isInPlay ? '<div class="inplay-badge"><span class="inplay-dot"></span>Playing</div>'
+                 : isWaiting ? '<div class="waiting-badge">⏳ Waiting</div>'
+                 : '<div></div>'}
+      <span class="match-court">Court ${court}</span>
+      <button class="inplay-btn${isInPlay?' on':''}" onclick="toggleInPlay(${ri},${mi})">
+        ${isInPlay ? '◼ Stop' : '▶ Start'}
+      </button>
+    </div>
     <div class="match-vs">
       <span class="tn">${esc(t1.name)}</span>
       <span class="vs-tag">vs</span>
@@ -979,7 +1032,7 @@ function matchHtml(m, ri, mi, court) {
   </div>`;
 }
 
-function mixerMatchHtml(m, ri, mi, court) {
+function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
   const team1 = m.team1.map(id => teamById(id)).filter(Boolean);
   const team2 = m.team2.map(id => teamById(id)).filter(Boolean);
   if (!team1.length || !team2.length) return '';
@@ -987,10 +1040,13 @@ function mixerMatchHtml(m, ri, mi, court) {
   if (m.s1 !== null && !m.ed) {
     const t1win = m.s1 > m.s2, t2win = m.s2 > m.s1;
     return `<div class="match-card">
-      <div style="display:flex;align-items:center;margin-bottom:10px">
-        <span class="match-court" style="margin-bottom:0;flex:1">Court ${court}</span>
-        <div class="edit-link" onclick="editMatch(${ri},${mi})" style="margin-right:12px">Edit</div>
-        <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
+      <div class="match-header">
+        <div></div>
+        <span class="match-court">Court ${court}</span>
+        <div>
+          <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit</div>
+          <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
+        </div>
       </div>
       <div class="mixer-row">
         <div class="mixer-team-col">
@@ -1008,10 +1064,22 @@ function mixerMatchHtml(m, ri, mi, court) {
     </div>`;
   }
 
+  const allIds = [...m.team1, ...m.team2];
+  const isInPlay = !!m.ip;
+  const isWaiting = !isInPlay && allIds.some(id => inPlayIds.has(id));
+  const cardClass = isInPlay ? 'match-card match-inplay' : isWaiting ? 'match-card match-waiting' : 'match-card';
   const v1 = (m.s1 !== null && m.s1 !== 0) ? m.s1 : '';
   const v2 = (m.s2 !== null && m.s2 !== 0) ? m.s2 : '';
-  return `<div class="match-card">
-    <div class="match-court">Court ${court}</div>
+  return `<div class="${cardClass}">
+    <div class="match-header">
+      ${isInPlay ? '<div class="inplay-badge"><span class="inplay-dot"></span>Playing</div>'
+                 : isWaiting ? '<div class="waiting-badge">⏳ Waiting</div>'
+                 : '<div></div>'}
+      <span class="match-court">Court ${court}</span>
+      <button class="inplay-btn${isInPlay?' on':''}" onclick="toggleInPlay(${ri},${mi})">
+        ${isInPlay ? '◼ Stop' : '▶ Start'}
+      </button>
+    </div>
     <div class="mixer-row" style="margin-bottom:10px">
       <div class="mixer-team-col">
         ${team1.map(p => `<div class="mixer-player">${esc(p.name)}</div>`).join('')}
@@ -1043,6 +1111,7 @@ function saveMatch(ri, mi) {
   S.rounds[ri].matches[mi].s1 = s1;
   S.rounds[ri].matches[mi].s2 = s2;
   S.rounds[ri].matches[mi].ed = false;
+  S.rounds[ri].matches[mi].ip = false;
   const roundDone = S.rounds[ri].matches.every(m => m.s1 !== null);
   if (roundDone) openRounds.delete(ri);
 
@@ -1056,6 +1125,11 @@ function saveMatch(ri, mi) {
   }
 
   save(); renderRoundsPreserving(); renderStandings();
+}
+
+function toggleInPlay(ri, mi) {
+  S.rounds[ri].matches[mi].ip = !S.rounds[ri].matches[mi].ip;
+  save(); renderRoundsPreserving();
 }
 
 function editMatch(ri, mi) {
