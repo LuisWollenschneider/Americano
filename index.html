@@ -205,7 +205,7 @@ body {
 .save-btn:active { opacity: .8; }
 
 /* ── IN-PLAY ──────────────────────────────────────── */
-.match-inplay { border-color: var(--green); }
+.match-card.match-inplay { border-color: var(--green); }
 .match-waiting { opacity: .45; pointer-events: none; }
 .match-waiting .save-btn, .match-waiting input { pointer-events: none; }
 .match-header {
@@ -576,6 +576,7 @@ load();
 loadPresets();
 const firstIncomplete = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
 if (firstIncomplete !== -1) openRounds.add(firstIncomplete);
+S.rounds.forEach((r, i) => { if (r.matches.some(m => m.ip)) openRounds.add(i); });
 renderSetup();
 renderRounds();
 renderStandings();
@@ -1017,9 +1018,9 @@ function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
       </button>
     </div>
     <div class="match-vs">
-      <span class="tn">${esc(t1.name)}</span>
+      <span class="tn" ${isWaiting&&inPlayIds.has(m.t1)?'style="color:var(--accent)"':''}>${esc(t1.name)}</span>
       <span class="vs-tag">vs</span>
-      <span class="tn r">${esc(t2.name)}</span>
+      <span class="tn r" ${isWaiting&&inPlayIds.has(m.t2)?'style="color:var(--accent)"':''}>${esc(t2.name)}</span>
     </div>
     <div class="score-row">
       <input class="score-input" type="text" inputmode="decimal" pattern="[0-9]*"
@@ -1082,11 +1083,11 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
     </div>
     <div class="mixer-row" style="margin-bottom:10px">
       <div class="mixer-team-col">
-        ${team1.map(p => `<div class="mixer-player">${esc(p.name)}</div>`).join('')}
+        ${team1.map(p => `<div class="mixer-player"${isWaiting&&inPlayIds.has(p.id)?' style="color:var(--accent)"':''}>${esc(p.name)}</div>`).join('')}
       </div>
       <span class="vs-tag" style="flex-shrink:0">vs</span>
       <div class="mixer-team-col right">
-        ${team2.map(p => `<div class="mixer-player">${esc(p.name)}</div>`).join('')}
+        ${team2.map(p => `<div class="mixer-player"${isWaiting&&inPlayIds.has(p.id)?' style="color:var(--accent)"':''}>${esc(p.name)}</div>`).join('')}
       </div>
     </div>
     <div class="score-row">
