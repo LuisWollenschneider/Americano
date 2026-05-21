@@ -574,6 +574,12 @@ function load() {
 ═══════════════════════════════════════════ */
 load();
 loadPresets();
+(function applyHashMode() {
+  const hash = location.hash.replace('#', '').toLowerCase();
+  if (hash === 'mixer') { S.mode = 'mixer'; save(); }
+  else if (hash === 'singles') { S.mode = 'singles'; save(); }
+  else if (hash === 'teams') { S.mode = 'teams'; save(); }
+})();
 const firstIncomplete = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
 if (firstIncomplete !== -1) openRounds.add(firstIncomplete);
 S.rounds.forEach((r, i) => { if (r.matches.some(m => m.ip)) openRounds.add(i); });
