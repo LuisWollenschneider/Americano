@@ -95,6 +95,11 @@ body::before {
   color: var(--text); font-size: 16px; font-family: inherit;
 }
 .input-row input::placeholder { color: var(--muted); }
+.row-num {
+  flex-shrink: 0; min-width: 22px; text-align: right;
+  font-size: 14px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
 .input-row input.error { color: var(--red); animation: shake .3s ease; }
 .del-btn {
   width: 26px; height: 26px; border-radius: 50%;
@@ -441,6 +446,56 @@ body::before {
 .creator-credit a:hover, .creator-credit a:active { opacity: 0.8; }
 .creator-credit span { font-size: 13px; font-weight: 500; }
 .creator-by { font-size: 11px; display: block; margin-bottom: -2px; font-style: italic; color: var(--muted); }
+
+.nav-brand { display: none; }
+
+/* ── DESKTOP ─────────────────────────────────────────── */
+@media (min-width: 768px) {
+  :root { --side-w: 232px; }
+
+  body { padding-left: var(--side-w); }
+
+  /* bottom nav → left sidebar */
+  .nav {
+    top: 0; bottom: 0; right: auto;
+    width: var(--side-w);
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 4px;
+    padding: 22px 12px;
+    border-top: none;
+    border-right: .5px solid rgba(255,255,255,.08);
+  }
+  .nav-brand {
+    display: flex; align-items: center; gap: 9px;
+    padding: 4px 12px 20px;
+    font-size: 20px; font-weight: 800; letter-spacing: -0.4px;
+  }
+  .nav-btn {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 13px;
+    padding: 11px 14px;
+    font-size: 15px; font-weight: 600;
+    border-radius: 10px;
+    transition: color .12s, background .12s;
+  }
+  .nav-btn svg { width: 21px; height: 21px; }
+  .nav-btn:hover { color: var(--text); }
+  .nav-btn.active { background: var(--accent-dim); color: var(--accent); }
+
+  /* constrain screen width — don't span the whole viewport */
+  .screen {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 28px 40px 48px;
+  }
+  #screen-setup    { max-width: 640px; }
+  #screen-standings { max-width: 640px; }
+  #screen-presets  { max-width: 760px; }
+}
 </style>
 </head>
 <body>
@@ -563,6 +618,10 @@ body::before {
 
 <!-- ──────────────── NAV ──────────────── -->
 <nav class="nav">
+  <div class="nav-brand">
+    <img src="logo.png" height="26" style="width:auto;object-fit:contain">
+    <span>Americano</span>
+  </div>
   <button class="nav-btn active" id="nav-setup" onclick="goTo('setup')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
       <circle cx="12" cy="8" r="4"/>
@@ -722,9 +781,10 @@ function renderSetup() {
     const d = document.createElement('div');
     d.className = 'input-row';
     d.innerHTML =
+      `<span class="row-num">${i+1}.</span>` +
       `<input type="text" placeholder="${noun()} ${i+1}" value="${esc(t.name)}"
          oninput="S.teams[${i}].name=this.value;save()"
-         onkeydown="if(event.key==='Enter'){event.preventDefault();addTeam();}">` +
+         onkeydown="if(event.key==='Enter'){event.preventDefault();if(${i}===S.teams.length-1&&this.value.trim())addTeam();}else if(event.key==='Backspace'&&!this.value&&${i}===S.teams.length-1&&${i}>0){event.preventDefault();removeTeam(${i});const ins=document.getElementById('teams-list').querySelectorAll('input');if(ins.length){const el=ins[ins.length-1];el.focus();const n=el.value.length;el.setSelectionRange(n,n);}}">` +
       `<button class="del-btn" onclick="removeTeam(${i})">×</button>`;
     list.appendChild(d);
   });
