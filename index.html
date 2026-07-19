@@ -707,11 +707,41 @@ function load() {
 ═══════════════════════════════════════════ */
 load();
 loadPresets();
-(function applyHashMode() {
-  const hash = location.hash.replace('#', '').toLowerCase();
-  if (hash === 'mixer') { S.mode = 'mixer'; save(); }
-  else if (hash === 'singles') { S.mode = 'singles'; save(); }
-  else if (hash === 'teams') { S.mode = 'teams'; save(); }
+/* URL configuration — see README ("Configure via URL") for the full contract.
+   Params may live in the query string (?mode=mixer) or after a ? inside the
+   hash (#rounds?mode=mixer). Applied once per distinct param set: the set is
+   fingerprinted into S.urlSig so a plain reload never wipes entered scores. */
+(function applyUrlConfig() {
+  const MODES = ['teams', 'singles', 'mixer'];
+  const params = new URLSearchParams(location.search);
+  const [hashPath, hashQuery] = location.hash.replace(/^#/, '').split('?');
+  if (hashQuery) new URLSearchParams(hashQuery).forEach((v, k) => { if (!params.has(k)) params.append(k, v); });
+
+  const get = k => (params.get(k) || '').trim();
+  const int = (k, min, fallback) => { const n = parseInt(get(k), 10); return Number.isFinite(n) && n >= min ? n : fallback; };
+
+  // legacy: #mixer / #singles / #teams
+  let mode = MODES.includes(hashPath.toLowerCase()) ? hashPath.toLowerCase() : null;
+  if (MODES.includes(get('mode').toLowerCase())) mode = get('mode').toLowerCase();
+
+  const names = params.getAll('players').concat(params.getAll('teams'))
+    .join(',').split(',').map(s => s.trim()).filter(Boolean);
+  const hasNames = params.has('players') || params.has('teams');
+
+  const sig = JSON.stringify([mode, get('courts'), get('teamSize') || get('teamsize'),
+                              get('rounds'), hasNames ? names : null]);
+  if (sig === JSON.stringify([null, '', '', '', null])) return; // nothing to apply
+  if (sig === S.urlSig) return;                                 // already applied
+
+  if (mode)                     S.mode      = mode;
+  if (params.has('courts'))     S.courts    = int('courts', 1, S.courts);
+  if (params.has('teamSize') || params.has('teamsize'))
+                                S.teamSize  = int(params.has('teamSize') ? 'teamSize' : 'teamsize', 2, S.teamSize);
+  if (params.has('rounds'))     S.numRounds = int('rounds', 1, S.numRounds);
+  if (hasNames)                 { S.teams = names.map(n => ({ id: uid(), name: n })); S.rounds = []; S.generated = false; }
+
+  S.urlSig = sig;
+  save();
 })();
 const firstIncomplete = S.rounds.findIndex(r => r.matches.some(m => m.s1 === null));
 if (firstIncomplete !== -1) openRounds.add(firstIncomplete);
