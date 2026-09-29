@@ -428,6 +428,12 @@ body::before {
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 
+.hint {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  margin: 8px 4px 0;
+}
+.pool-count { color: var(--muted); font-size: 11px; margin-left: 4px; }
+
 .seg-btn.active {
   background: var(--card); color: var(--accent);
   box-shadow: 0 1px 4px rgba(0,0,0,.4);
@@ -528,12 +534,10 @@ body::before {
     <button class="seg-btn" id="mode-mixer"   onclick="setMode('mixer')">Mixer</button>
   </div>
 
-  <div class="section-label">Courts available</div>
-  <div class="stepper">
-    <span class="stepper-label">Number of courts</span>
-    <button class="step-btn" id="courts-minus" onclick="adj('courts',-1)">−</button>
-    <div class="stepper-val" id="courts-val">2</div>
-    <button class="step-btn" onclick="adj('courts',1)">+</button>
+  <div class="section-label">Scheduling</div>
+  <div class="seg">
+    <button class="seg-btn" id="sched-rounds"  onclick="setRolling(false)">Fixed rounds</button>
+    <button class="seg-btn" id="sched-rolling" onclick="setRolling(true)">Court by court</button>
   </div>
 
   <div id="mixer-settings" style="display:none">
@@ -543,13 +547,6 @@ body::before {
       <button class="step-btn" id="teamsize-minus" onclick="adj('teamSize',-1)">−</button>
       <div class="stepper-val" id="teamsize-val">2</div>
       <button class="step-btn" onclick="adj('teamSize',1)">+</button>
-    </div>
-    <div class="section-label">Rounds to generate</div>
-    <div class="stepper">
-      <span class="stepper-label">Number of rounds</span>
-      <button class="step-btn" id="numrounds-minus" onclick="adj('numRounds',-1)">−</button>
-      <div class="stepper-val" id="numrounds-val">4</div>
-      <button class="step-btn" onclick="adj('numRounds',1)">+</button>
     </div>
   </div>
 
@@ -672,12 +669,14 @@ let openRounds = new Set(); // in-memory only, not persisted
 
 let S = {
   mode: 'teams',        // 'teams' | 'singles' | 'mixer'
-  courts: 2,
   teamSize: 2,          // mixer only: players per team
-  numRounds: 4,         // mixer only: rounds to generate upfront
+  rolling: false,       // rolling: no rounds, one game at a time as courts free up
   teams: [],            // [{id, name}]  — players in mixer mode
   rounds: [],           // standard: [{matches:[{t1,t2,s1,s2,ed}], bye}]
                         // mixer:    [{matches:[{team1:[],team2:[],s1,s2,ed}], byes:[]}]
+                        // rolling:  [{rolling:true, matches:[{...,court,end}]}] — one pseudo-round;
+                        //           s1===null means on court, end = completion order
+  rrOrders: [],          // teams/singles: shuffled round-robin order per cycle, rounds revealed on demand
   generated: false
 };
 
@@ -728,16 +727,18 @@ loadPresets();
     .join(',').split(',').map(s => s.trim()).filter(Boolean);
   const hasNames = params.has('players') || params.has('teams');
 
-  const sig = JSON.stringify([mode, get('courts'), get('teamSize') || get('teamsize'),
-                              get('rounds'), hasNames ? names : null]);
+  // 'courts' and 'rounds' are no longer applied but stay in the signature so old links keep their fingerprint
+  const sigParts = [mode, get('courts'), get('teamSize') || get('teamsize'),
+                    get('rounds'), hasNames ? names : null];
+  if (params.has('rolling')) sigParts.push(get('rolling').toLowerCase());
+  const sig = JSON.stringify(sigParts);
   if (sig === JSON.stringify([null, '', '', '', null])) return; // nothing to apply
   if (sig === S.urlSig) return;                                 // already applied
 
   if (mode)                     S.mode      = mode;
-  if (params.has('courts'))     S.courts    = int('courts', 1, S.courts);
   if (params.has('teamSize') || params.has('teamsize'))
                                 S.teamSize  = int(params.has('teamSize') ? 'teamSize' : 'teamsize', 2, S.teamSize);
-  if (params.has('rounds'))     S.numRounds = int('rounds', 1, S.numRounds);
+  if (params.has('rolling'))    S.rolling   = !['0', 'false', 'no', 'off'].includes(get('rolling').toLowerCase());
   if (hasNames)                 { S.teams = names.map(n => ({ id: uid(), name: n })); S.rounds = []; S.generated = false; }
 
   S.urlSig = sig;
@@ -752,10 +753,6 @@ renderStandings();
 renderPresets();
 const savedTab = sessionStorage.getItem('tab') || 'setup';
 goTo(!S.generated && ['rounds','standings'].includes(savedTab) ? 'setup' : savedTab);
-if (S.generated) {
-  document.getElementById('reset-btn').style.display = '';
-  document.getElementById('gen-btn').textContent = 'Regenerate schedule';
-}
 
 /* ═══════════════════════════════════════════
    NAV
@@ -783,9 +780,18 @@ function setMode(m) {
   S.mode = m; save(); renderSetup();
 }
 
+function setRolling(on) {
+  S.rolling = on; save(); renderSetup();
+}
+
+function syncGenBtn() {
+  document.getElementById('reset-btn').style.display = S.generated ? '' : 'none';
+  document.getElementById('gen-btn').textContent = S.rolling
+    ? (S.generated ? 'Restart session' : 'Start session')
+    : (S.generated ? 'Regenerate schedule' : 'Generate schedule');
+}
+
 function renderSetup() {
-  document.getElementById('courts-val').textContent = S.courts;
-  document.getElementById('courts-minus').disabled = S.courts <= 1;
 
   // mode selector
   document.getElementById('mode-singles').classList.toggle('active', S.mode === 'singles');
@@ -796,9 +802,12 @@ function renderSetup() {
   if (isMixer) {
     document.getElementById('teamsize-val').textContent = S.teamSize;
     document.getElementById('teamsize-minus').disabled = S.teamSize <= 2;
-    document.getElementById('numrounds-val').textContent = S.numRounds;
-    document.getElementById('numrounds-minus').disabled = S.numRounds <= 1;
   }
+
+  // scheduling selector
+  document.getElementById('sched-rounds').classList.toggle('active', !S.rolling);
+  document.getElementById('sched-rolling').classList.toggle('active', S.rolling);
+  syncGenBtn();
 
   // dynamic labels
   document.getElementById('label-entries').textContent = noun() + 's';
@@ -821,9 +830,7 @@ function renderSetup() {
 }
 
 function adj(key, d) {
-  if (key === 'courts')         S.courts    = Math.max(1, S.courts    + d);
-  else if (key === 'teamSize')  S.teamSize  = Math.max(2, S.teamSize  + d);
-  else if (key === 'numRounds') S.numRounds = Math.max(1, S.numRounds + d);
+  if (key === 'teamSize')  S.teamSize  = Math.max(2, S.teamSize  + d);
   save(); renderSetup();
 }
 
@@ -849,29 +856,33 @@ function clearTeams() {
 /* ═══════════════════════════════════════════
    SCHEDULE GENERATION  (circle method)
 ═══════════════════════════════════════════ */
-function buildRounds(teams) {
-  const list = teams.map(t => t.id);
+// round r (0-based) of a round robin over `order` — every pairing exactly once per n-1 rounds
+function circleRound(order, r) {
+  const list = [...order];
   if (list.length % 2 !== 0) list.push(null); // null = bye slot
   const n = list.length;
-  const rounds = [];
-
-  const fixed = list[0];
-  const rot   = list.slice(1);
-
-  for (let r = 0; r < n - 1; r++) {
-    const ring = [fixed, ...rot];
-    const matches = [];
-    let bye = null;
-    for (let i = 0; i < n / 2; i++) {
-      const a = ring[i], b = ring[n - 1 - i];
-      if      (a === null) bye = b;
-      else if (b === null) bye = a;
-      else matches.push({ t1: a, t2: b, s1: null, s2: null, ed: false });
-    }
-    rounds.push({ matches, bye }); // bye is null when even number of teams
-    rot.unshift(rot.pop()); // rotate
+  const rot = list.slice(1);
+  for (let k = 0; k < r; k++) rot.unshift(rot.pop()); // rotate
+  const ring = [list[0], ...rot];
+  const matches = [];
+  let bye = null;
+  for (let i = 0; i < n / 2; i++) {
+    const a = ring[i], b = ring[n - 1 - i];
+    if      (a === null) bye = b;
+    else if (b === null) bye = a;
+    else matches.push({ t1: a, t2: b, s1: null, s2: null, ed: false });
   }
-  return rounds;
+  return { matches, bye }; // bye is null when even number of teams
+}
+
+// next round on demand: walks a hidden round-robin order, starting a freshly
+// shuffled cycle once everyone has played everyone
+function buildNextRound() {
+  const perCycle = S.teams.length + (S.teams.length % 2) - 1;
+  const r = S.rounds.length, cycle = Math.floor(r / perCycle);
+  if (!S.rrOrders) S.rrOrders = [];
+  if (!S.rrOrders[cycle]) S.rrOrders[cycle] = shuffle(S.teams.map(t => t.id));
+  return circleRound(S.rrOrders[cycle], r % perCycle);
 }
 
 /* ═══════════════════════════════════════════
@@ -972,16 +983,8 @@ function buildMixerRound(players, teamSize, existingRounds) {
   };
 }
 
-function buildAllMixerRounds(players, teamSize, numRounds) {
-  const rounds = [];
-  for (let r = 0; r < numRounds; r++)
-    rounds.push(buildMixerRound(players, teamSize, rounds));
-  return rounds;
-}
-
-function addMixerRound() {
-  const newRound = buildMixerRound(S.teams, S.teamSize, S.rounds);
-  S.rounds.push(newRound);
+function addRound() {
+  S.rounds.push(S.mode === 'mixer' ? buildMixerRound(S.teams, S.teamSize, S.rounds) : buildNextRound());
   openRounds.add(S.rounds.length - 1);
   save(); renderRounds();
 }
@@ -1014,17 +1017,16 @@ function generate() {
   if (S.mode === 'mixer') {
     const minPlayers = S.teamSize * 2;
     if (S.teams.length < minPlayers) { shakeAddBtn(); showToast(`Need at least ${minPlayers} players for ${S.teamSize}v${S.teamSize}`); return; }
-    S.rounds = buildAllMixerRounds(S.teams, S.teamSize, S.numRounds);
-  } else {
-    S.rounds = buildRounds(S.teams);
   }
+  S.rrOrders = [];
+  if (S.rolling) S.rounds = [{ rolling: true, matches: [] }];
+  else S.rounds = [S.mode === 'mixer' ? buildMixerRound(S.teams, S.teamSize, []) : buildNextRound()]; // more via "Add round"
   S.generated = true;
   openRounds = new Set([0]); // open first round only
   save();
   renderRounds();
   renderStandings();
-  document.getElementById('reset-btn').style.display = '';
-  document.getElementById('gen-btn').textContent = 'Regenerate schedule';
+  syncGenBtn();
   goTo('rounds');
 }
 
@@ -1032,17 +1034,24 @@ function resetTournament() {
   if (!confirm('Reset everything? Scores will be lost.')) return;
   S.rounds = []; S.generated = false;
   save();
-  document.getElementById('reset-btn').style.display = 'none';
-  document.getElementById('gen-btn').textContent = 'Generate schedule';
+  syncGenBtn();
   renderRounds(); renderStandings();
 }
 
 /* ═══════════════════════════════════════════
    ROUNDS RENDER
 ═══════════════════════════════════════════ */
-function renderRoundsPreserving() {
+// removed = [ri, mi] of a match just spliced out, so inputs of later matches shift down one index
+function renderRoundsPreserving(removed) {
   const snap = {};
-  document.querySelectorAll('[id^="s1-"],[id^="s2-"]').forEach(el => { snap[el.id] = el.value; });
+  document.querySelectorAll('[id^="s1-"],[id^="s2-"]').forEach(el => {
+    let [s, ri, mi] = el.id.split('-');
+    if (removed && +ri === removed[0]) {
+      if (+mi === removed[1]) return;
+      if (+mi > removed[1]) mi = +mi - 1;
+    }
+    snap[`${s}-${ri}-${mi}`] = el.value;
+  });
   renderRounds();
   Object.entries(snap).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; });
 }
@@ -1075,6 +1084,7 @@ function renderRounds() {
     el.innerHTML = '<div class="empty"><strong>No schedule yet.</strong><br>Add teams and generate.</div>';
     return;
   }
+  if (isRolling()) { renderRolling(el); return; }
 
   el.innerHTML = '';
 
@@ -1108,7 +1118,7 @@ function renderRounds() {
     }));
 
     const bodyHtml = ms.map((m, mi) =>
-      matchHtml(m, ri, mi, (mi % S.courts) + 1, inPlayIds)
+      matchHtml(m, ri, mi, m.court, inPlayIds)
     ).join('');
 
     const card = document.createElement('div');
@@ -1125,14 +1135,12 @@ function renderRounds() {
     el.appendChild(card);
   });
 
-  if (S.mode === 'mixer') {
-    const addBtn = document.createElement('button');
-    addBtn.className = 'ghost-btn';
-    addBtn.style.marginTop = '4px';
-    addBtn.textContent = '＋ Add round';
-    addBtn.onclick = addMixerRound;
-    el.appendChild(addBtn);
-  }
+  const addBtn = document.createElement('button');
+  addBtn.className = 'ghost-btn';
+  addBtn.style.marginTop = '4px';
+  addBtn.textContent = '＋ Add round';
+  addBtn.onclick = addRound;
+  el.appendChild(addBtn);
 
   setTimeout(fixLastRows, 0);
 }
@@ -1154,7 +1162,7 @@ function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
     return `<div class="match-card">
       <div class="match-header">
         <div></div>
-        <span class="match-court">Court ${court}</span>
+        <span class="match-court">${court ? `Court ${court}` : `Match ${mi + 1}`}</span>
         <div>
           <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit</div>
           <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
@@ -1182,10 +1190,8 @@ function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
       ${isInPlay ? '<div class="inplay-badge"><span class="inplay-dot"></span>Playing</div>'
                  : isWaiting ? '<div class="waiting-badge">⏳ Waiting</div>'
                  : '<div></div>'}
-      <span class="match-court">Court ${court}</span>
-      <button class="inplay-btn${isInPlay?' on':''}" onclick="toggleInPlay(${ri},${mi})">
-        ${isInPlay ? '◼ Stop' : '▶ Start'}
-      </button>
+      <span class="match-court">${court ? `Court ${court}` : `Match ${mi + 1}`}</span>
+      ${headerCtrlHtml(m, ri, mi)}
     </div>
     <div class="match-vs">
       <span class="tn" ${isWaiting&&inPlayIds.has(m.t1)?'style="color:var(--accent)"':''}>${esc(t1.name)}</span>
@@ -1203,6 +1209,15 @@ function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
   </div>`;
 }
 
+function headerCtrlHtml(m, ri, mi) {
+  if (isRolling()) return m.s1 === null
+    ? `<button class="inplay-btn on" onclick="cancelGame(${mi})">✕ Cancel</button>`
+    : '<div></div>'; // editing a finished game
+  return `<button class="inplay-btn${m.ip?' on':''}" onclick="toggleInPlay(${ri},${mi})">
+        ${m.ip ? '◼ Stop' : '▶ Start'}
+      </button>`;
+}
+
 function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
   const team1 = m.team1.map(id => teamById(id)).filter(Boolean);
   const team2 = m.team2.map(id => teamById(id)).filter(Boolean);
@@ -1213,7 +1228,7 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
     return `<div class="match-card">
       <div class="match-header">
         <div></div>
-        <span class="match-court">Court ${court}</span>
+        <span class="match-court">${court ? `Court ${court}` : `Match ${mi + 1}`}</span>
         <div>
           <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit</div>
           <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
@@ -1246,10 +1261,8 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
       ${isInPlay ? '<div class="inplay-badge"><span class="inplay-dot"></span>Playing</div>'
                  : isWaiting ? '<div class="waiting-badge">⏳ Waiting</div>'
                  : '<div></div>'}
-      <span class="match-court">Court ${court}</span>
-      <button class="inplay-btn${isInPlay?' on':''}" onclick="toggleInPlay(${ri},${mi})">
-        ${isInPlay ? '◼ Stop' : '▶ Start'}
-      </button>
+      <span class="match-court">${court ? `Court ${court}` : `Match ${mi + 1}`}</span>
+      ${headerCtrlHtml(m, ri, mi)}
     </div>
     <div class="mixer-row" style="margin-bottom:10px">
       <div class="mixer-team-col">
@@ -1283,6 +1296,11 @@ function saveMatch(ri, mi) {
   S.rounds[ri].matches[mi].s2 = s2;
   S.rounds[ri].matches[mi].ed = false;
   S.rounds[ri].matches[mi].ip = false;
+  if (isRolling()) {
+    const m = S.rounds[ri].matches[mi];
+    if (m.end == null) m.end = 1 + Math.max(0, ...S.rounds[ri].matches.map(x => x.end || 0));
+    save(); renderRoundsPreserving(); renderStandings(); return;
+  }
   const roundDone = S.rounds[ri].matches.every(m => m.s1 !== null);
   if (roundDone) openRounds.delete(ri);
 
@@ -1298,8 +1316,19 @@ function saveMatch(ri, mi) {
   save(); renderRoundsPreserving(); renderStandings();
 }
 
+// courts are assigned when a match actually starts: lowest number not currently in play
+function freeCourt() {
+  const used = new Set();
+  S.rounds.forEach(r => r.matches.forEach(m => { if (m.ip && m.s1 === null) used.add(m.court); }));
+  let court = 1;
+  while (used.has(court)) court++;
+  return court;
+}
+
 function toggleInPlay(ri, mi) {
-  S.rounds[ri].matches[mi].ip = !S.rounds[ri].matches[mi].ip;
+  const m = S.rounds[ri].matches[mi];
+  m.court = m.ip ? undefined : freeCourt();
+  m.ip = !m.ip;
   save(); renderRoundsPreserving();
 }
 
@@ -1309,10 +1338,149 @@ function editMatch(ri, mi) {
 }
 
 function deleteMatch(ri, mi) {
+  if (isRolling()) { // a rolling game without a score would put its players back on court
+    S.rounds[ri].matches.splice(mi, 1);
+    save(); renderRoundsPreserving([ri, mi]); renderStandings(); return;
+  }
   S.rounds[ri].matches[mi].s1 = null;
   S.rounds[ri].matches[mi].s2 = null;
+  S.rounds[ri].matches[mi].court = undefined;
   S.rounds[ri].matches[mi].ed = false;
   save(); renderRounds(); renderStandings();
+}
+
+/* ═══════════════════════════════════════════
+   ROLLING  — no rounds; a new game starts whenever a court frees up
+═══════════════════════════════════════════ */
+function isRolling() { return !!S.rounds[0]?.rolling; }
+function rollingGames() { return S.rounds[0].matches; }
+function matchIds(m) { return m.team1 ? [...m.team1, ...m.team2] : [m.t1, m.t2]; }
+function playersPerGame() { return S.mode === 'mixer' ? S.teamSize * 2 : 2; }
+
+// ids not on court, in priority order: fewest games, then longest wait
+function rollingPool(stats = rollingStats()) {
+  const busy = new Set();
+  rollingGames().forEach(m => { if (m.s1 === null) matchIds(m).forEach(id => busy.add(id)); });
+  const pool = shuffle(S.teams.filter(t => !busy.has(t.id)).map(t => t.id)); // random among equals
+  return pool.sort((a, b) =>
+    (stats.played[a] || 0) - (stats.played[b] || 0) || (stats.lastEnd[a] || 0) - (stats.lastEnd[b] || 0));
+}
+
+function rollingStats() {
+  const st = { played: {}, lastEnd: {}, mates: {}, opps: {}, lastMates: {}, lastOpps: {} };
+  const done = rollingGames().filter(m => m.s1 !== null).sort((a, b) => a.end - b.end);
+  for (const m of done) {
+    const sides = m.team1 ? [m.team1, m.team2] : [[m.t1], [m.t2]];
+    sides.forEach((side, si) => {
+      const other = sides[1 - si];
+      for (const id of side) {
+        st.played[id] = (st.played[id] || 0) + 1;
+        st.lastEnd[id] = m.end;
+        st.lastMates[id] = new Set(side.filter(x => x !== id));
+        st.lastOpps[id] = new Set(other);
+      }
+      for (let i = 0; i < side.length; i++)
+        for (let j = i + 1; j < side.length; j++) {
+          const k = pairKey(side[i], side[j]);
+          st.mates[k] = (st.mates[k] || 0) + 1;
+        }
+    });
+    for (const a of sides[0]) for (const b of sides[1]) {
+      const k = pairKey(a, b);
+      st.opps[k] = (st.opps[k] || 0) + 1;
+    }
+  }
+  return st;
+}
+
+// lower is better: fairness (games played, wait order) balanced against repetition
+function rollingPenalty(sides, st, pos, minPlayed) {
+  let score = 0;
+  for (const id of sides.flat())
+    score += ((st.played[id] || 0) - minPlayed) * 300 + pos[id] * 20;
+  for (const side of sides)
+    for (let i = 0; i < side.length; i++)
+      for (let j = i + 1; j < side.length; j++)
+        score += (st.mates[pairKey(side[i], side[j])] || 0) * 300
+               + (st.lastMates[side[i]]?.has(side[j]) ? 400 : 0);
+  // opponents matter most when there is no teammate variety (teams / singles)
+  const [oppW, lastOppW] = sides[0].length > 1 ? [30, 60] : [300, 500];
+  for (const a of sides[0]) for (const b of sides[1])
+    score += (st.opps[pairKey(a, b)] || 0) * oppW
+           + (st.lastOpps[a]?.has(b) || st.lastOpps[b]?.has(a) ? lastOppW : 0);
+  return score;
+}
+
+function pickRollingGame() {
+  const st = rollingStats();
+  const pool = rollingPool(st);
+  if (pool.length < playersPerGame()) return null;
+  const pos = {};
+  pool.forEach((id, i) => { pos[id] = i; });
+  const minPlayed = st.played[pool[0]] || 0;
+
+  const candidates = [];
+  if (S.mode !== 'mixer') {
+    for (let i = 0; i < pool.length; i++)
+      for (let j = i + 1; j < pool.length; j++) candidates.push([[pool[i]], [pool[j]]]);
+  } else {
+    // sample around the front of the queue: noisy priority sort, take first k, split randomly
+    const k = playersPerGame();
+    for (let attempt = 0; attempt < 1500; attempt++) {
+      const spread = attempt === 0 ? 0 : Math.random() * pool.length;
+      const chosen = shuffle(pool.map((id, i) => [id, i + Math.random() * spread])
+        .sort((a, b) => a[1] - b[1]).slice(0, k).map(x => x[0]));
+      candidates.push([chosen.slice(0, S.teamSize), chosen.slice(S.teamSize)]);
+    }
+  }
+
+  let best = null, bestScore = Infinity;
+  for (const sides of candidates) {
+    const score = rollingPenalty(sides, st, pos, minPlayed);
+    if (score < bestScore || (score === bestScore && Math.random() < 0.3)) { bestScore = score; best = sides; }
+  }
+  return best;
+}
+
+function newGame() {
+  const sides = pickRollingGame();
+  if (!sides) return;
+  const games = rollingGames();
+  const base = { s1: null, s2: null, ed: false, ip: true, court: freeCourt() };
+  games.push(S.mode === 'mixer'
+    ? { team1: sides[0], team2: sides[1], ...base }
+    : { t1: sides[0][0], t2: sides[1][0], ...base });
+  save(); renderRoundsPreserving();
+}
+
+function cancelGame(mi) {
+  rollingGames().splice(mi, 1);
+  save(); renderRoundsPreserving([0, mi]);
+}
+
+function renderRolling(el) {
+  const games = rollingGames().map((m, mi) => [m, mi]);
+  const onCourt = games.filter(([m]) => m.s1 === null).sort((a, b) => a[0].court - b[0].court);
+  const done = games.filter(([m]) => m.s1 !== null).sort((a, b) => b[0].end - a[0].end);
+  const st = rollingStats();
+  const pool = rollingPool(st);
+  const need = playersPerGame();
+  const canStart = pool.length >= need;
+  const cards = list => `<div class="match-grid">${list.map(([m, mi]) => matchHtml(m, 0, mi, m.court)).join('')}</div>`;
+
+  el.innerHTML =
+    `<button class="primary-btn" style="margin-top:0" onclick="newGame()" ${canStart ? '' : 'disabled'}>＋ New game</button>` +
+    (canStart ? '' : `<p class="hint" style="text-align:center">Need ${need} waiting ${noun(false)}s to start a game — finish a game to free some up.</p>`) +
+    `<div class="section-label">Waiting (${pool.length})</div>` +
+    (pool.length
+      ? `<div class="preset-names">${pool.map(id =>
+          `<span class="preset-tag">${esc(teamById(id)?.name ?? '')}<span class="pool-count">${st.played[id] || 0}</span></span>`).join('')}</div>`
+      : `<p class="hint" style="margin-top:0">Everyone is on court.</p>`) +
+    `<div class="section-label">On court (${onCourt.length})</div>` +
+    (onCourt.length ? cards(onCourt) : `<p class="hint" style="margin-top:0">No games running. Tap "New game" once per free court.</p>`) +
+    (done.length ? `<div class="section-label">Finished (${done.length})</div>` + cards(done) : '');
+
+  setTimeout(fixLastRows, 0);
 }
 
 /* ═══════════════════════════════════════════
@@ -1373,8 +1541,10 @@ function renderStandings() {
   const rankClass = i => i===0?'gold':i===1?'silver':i===2?'bronze':'';
 
   el.innerHTML =
-    `<p class="progress-label">${played} / ${total} matches played</p>` +
-    `<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` +
+    (isRolling()
+      ? `<p class="progress-label" style="margin-bottom:18px">${played} game${played !== 1 ? 's' : ''} played</p>`
+      : `<p class="progress-label">${played} / ${total} matches played</p>` +
+        `<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>`) +
     `<table class="s-table">
       <thead><tr>
         <th>#  ${S.mode === 'mixer' ? 'Player' : noun()}</th>
@@ -1421,9 +1591,8 @@ function savePreset() {
     id: uid(),
     name,
     mode: S.mode,
-    courts: S.courts,
     teamSize: S.teamSize,
-    numRounds: S.numRounds,
+    rolling: S.rolling,
     teams: S.teams.map(t => ({ id: uid(), name: t.name }))
   });
   savePresets();
@@ -1437,15 +1606,12 @@ function loadPreset(id) {
   if (!p) return;
   if (S.generated && !confirm('Loading preset will reset the current tournament. Continue?')) return;
   S.mode      = p.mode;
-  S.courts    = p.courts;
   S.teamSize  = p.teamSize  ?? 2;
-  S.numRounds = p.numRounds ?? 4;
+  S.rolling   = p.rolling   ?? false;
   S.teams     = p.teams.map(t => ({ id: uid(), name: t.name }));
   S.rounds    = [];
   S.generated = false;
   save();
-  document.getElementById('reset-btn').style.display = 'none';
-  document.getElementById('gen-btn').textContent = 'Generate schedule';
   renderSetup();
   renderRounds();
   renderStandings();
@@ -1474,7 +1640,7 @@ function renderPresets() {
   const modeLabel = m => m === 'singles' ? 'Singles' : m === 'mixer' ? 'Mixer' : 'Teams';
   el.innerHTML = presets.map(p => {
     const noun = p.mode === 'teams' ? 'team' : 'player';
-    const meta = `${modeLabel(p.mode)} · ${p.courts} court${p.courts !== 1 ? 's' : ''} · ${p.teams.length} ${noun}${p.teams.length !== 1 ? 's' : ''}` +
+    const meta = `${modeLabel(p.mode)} · ${p.rolling ? 'Court by court' : 'Fixed rounds'} · ${p.teams.length} ${noun}${p.teams.length !== 1 ? 's' : ''}` +
       (p.mode === 'mixer' ? ` · ${p.teamSize}v${p.teamSize}` : '');
     const tags = p.teams.map(t => `<span class="preset-tag">${esc(t.name)}</span>`).join('');
     const isOpen = openPresets.has(p.id);

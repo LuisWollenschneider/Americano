@@ -13,9 +13,10 @@ Every team (or player) plays every other team exactly once. Points scored in eac
 ## Features
 
 - **Singles or Teams mode** — toggle changes all labels throughout the app
-- **Configurable courts** — matches within each round are assigned court numbers cycling 1 → N
+- **Courts assigned on start** — no court count to configure; a match gets the lowest free court number when you tap *Start* (or *New game*)
+- **Court-by-court scheduling** — no rounds: tap *New game* whenever a court frees up. Players/teams waiting longest (and with fewest games) go next, avoiding repeat match-ups. Works in every mode
 - **Configurable game length** — set how many points per game (default 11)
-- **Round-robin schedule** — generated via the circle method; every participant plays once per round
+- **Round-robin schedule** — one round at a time via *Add round*; follows the circle method, so every participant plays every other exactly once per cycle before a new shuffled cycle starts
 - **Bye handling** — odd number of participants? one sits out each round, clearly shown
 - **Score entry** — tap a round, enter scores, save; edit anytime
 - **Live standings** — sorted by W=3, D=1, L=0 points; tie-break by `points_scored - points_conceded`
@@ -30,7 +31,7 @@ link straight into a prepared setup — the user only presses *Generate
 schedule*. There is no UI for this — you build the link yourself.
 
 ```
-https://americano.luiswo.dev/?mode=mixer&players=Ann,Bob,Cleo,Dan&teamSize=2&rounds=6&courts=2
+https://americano.luiswo.dev/?mode=mixer&players=Ann,Bob,Cleo,Dan&teamSize=2
 ```
 
 Parameters may sit in the query string (`?mode=mixer`) or after a `?` inside
@@ -41,9 +42,8 @@ the hash (`#rounds?mode=mixer`), whichever your host prefers.
 | `mode` | `teams` \| `singles` \| `mixer` | Tournament mode |
 | `players` | comma-separated names | Participant list (replaces existing) |
 | `teams` | comma-separated names | Alias of `players` — same effect |
-| `courts` | integer ≥ 1 | Number of courts |
 | `teamSize` | integer ≥ 2 | Players per team (`mixer` only) |
-| `rounds` | integer ≥ 1 | Rounds generated upfront (`mixer` only) |
+| `rolling` | `1` \| `0` (also `true`/`false`) | Court-by-court scheduling on/off (off = fixed rounds) |
 
 Notes:
 
@@ -57,4 +57,5 @@ Notes:
 - **A config is applied once per distinct parameter set.** The set is
   fingerprinted into `localStorage`, so reloading or re-opening the same link
   does not wipe scores already entered. Change any parameter to apply it again.
+- `courts` and `rounds` are no longer supported and are ignored — courts are assigned when a match starts, and mixer generates one round with more added on the fly.
 - Legacy `#mixer`, `#singles`, `#teams` hash links still work.
