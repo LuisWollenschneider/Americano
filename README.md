@@ -2,7 +2,7 @@
 
 Site: https://americano.luiswo.dev
 
-Round-robin tournament scheduler for **Americano**-format Padel, Tennis or Pickleball.
+Round-robin tournament scheduler for **Americano**-format Padel, Tennis, Beach-Tennis or Pickleball.
 
 No dependencies, works offline, exclusively on your device. No account needed, no data collected. Open source and free to use.
 

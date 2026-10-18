@@ -1,0 +1,14 @@
+{
+  "name": "Americano Tournament Generator",
+  "short_name": "Americano",
+  "description": "Free round-robin Americano scheduler for padel, tennis, beach-tennis and pickleball. Or any other sport / tournament that can make use of it.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

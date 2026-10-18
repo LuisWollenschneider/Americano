@@ -1,0 +1,15 @@
+# Americano
+
+> Free, offline-first round-robin tournament generator for Americano-format padel, tennis, beach-tennis and pickleball. Runs entirely in the browser; no account, no data collected.
+
+- Modes: Singles, Teams (fixed partners), Mixer (rotating partners, configurable team size)
+- Scheduling: fixed rounds (circle method, everyone plays everyone once per cycle) or court by court (next game starts whenever a court frees up; longest-waiting players go next)
+- Courts assigned when a match starts (lowest free court number); byes handled for odd participant counts
+- Standings: win 3, draw 1, loss 0; tiebreak by points scored minus points conceded
+- Scores persist on-device via localStorage; presets for saved line-ups
+
+## Links
+
+- [App](https://americano.luiswo.dev/): the tournament generator
+- [Source and URL parameters](https://github.com/LuisWollenschneider/Americano#readme): pre-fill a tournament via `?mode=mixer&players=Ann,Bob,Cleo,Dan&teamSize=2`
+- [Author](https://luiswo.dev): Luis Wollenschneider

@@ -1,14 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="apple-touch-icon" sizes="128x128" href="favicon.ico">
-<link rel="shortcut icon" type="image/png" href="favicon.ico">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Americano Generator – Padel, Tennis, Beach-Tennis &amp; Pickleball</title>
+<meta name="description" content="Free Americano round-robin scheduler for padel, tennis, beach-tennis and pickleball. Singles, teams or mixer, live standings. Works offline, no sign-up.">
+<link rel="canonical" href="https://americano.luiswo.dev/">
+<meta name="theme-color" content="#0d0d0d">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Americano">
-<title>Americano</title>
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Americano">
+<meta property="og:url" content="https://americano.luiswo.dev/">
+<meta property="og:title" content="Americano Tournament Generator – Padel, Tennis, Beach-Tennis &amp; Pickleball">
+<meta property="og:description" content="Free round-robin Americano scheduler. Singles, teams or mixer, live standings, works offline, no sign-up.">
+<meta property="og:image" content="https://americano.luiswo.dev/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Americano – tournament generator for padel, tennis, beach-tennis and pickleball">
+<meta name="twitter:card" content="summary_large_image">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Americano",
+  "alternateName": "Americano Tournament Generator",
+  "url": "https://americano.luiswo.dev/",
+  "description": "Free Americano round-robin tournament scheduler for padel, tennis, beach-tennis and pickleball. Singles, teams or mixer mode, fixed rounds or court-by-court scheduling, live standings. Runs offline in the browser, no account needed.",
+  "image": "https://americano.luiswo.dev/og-image.jpg",
+  "applicationCategory": "SportsApplication",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript",
+  "inLanguage": "en",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+  "featureList": [
+    "Singles, teams and mixer (rotating partners) modes",
+    "Fixed rounds or court-by-court scheduling",
+    "Round-robin schedule using the circle method",
+    "Automatic bye handling for odd player counts",
+    "Live standings with points difference tiebreak",
+    "Saved presets and URL pre-configuration",
+    "Works offline, data stays on your device"
+  ],
+  "author": { "@type": "Person", "name": "Luis Wollenschneider", "url": "https://luiswo.dev" }
+}
+</script>
 <style>
 :root {
   --bg: #0d0d0d;
@@ -25,7 +68,7 @@
   --nav-h: calc(56px + env(safe-area-inset-bottom, 0px));
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html { height: 100%; }
+html { height: 100%; touch-action: manipulation; }
 body {
   font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, sans-serif;
   background-color: var(--bg); color: var(--text);
@@ -453,6 +496,22 @@ body::before {
 .creator-credit span { font-size: 13px; font-weight: 500; }
 .creator-by { font-size: 11px; display: block; margin-bottom: -2px; font-style: italic; color: var(--muted); }
 
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ── ABOUT (collapsed, below setup) ─────────────────── */
+.about { margin-top: 28px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.about summary {
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.8px; margin-left: 4px;
+}
+.about h2 { font-size: 15px; color: var(--text); margin: 18px 0 6px; }
+.about p, .about ul { margin-bottom: 8px; }
+.about ul { padding-left: 20px; }
+.about strong { color: var(--text); font-weight: 600; }
+
 .nav-brand { display: none; }
 
 /* ── DESKTOP ─────────────────────────────────────────── */
@@ -505,12 +564,13 @@ body::before {
 </style>
 </head>
 <body>
+<noscript><p style="padding:16px">Americano is a free round-robin tournament generator for padel, tennis, beach-tennis and pickleball. Please enable JavaScript to use it.</p></noscript>
 
 <!-- ──────────────── SETUP ──────────────── -->
 <div id="screen-setup" class="screen active">
-  <div class="page-title">
-    <img src="logo.png" height="34" style="width:auto;object-fit:contain;flex-shrink:0">
-    Americano
+  <h1 class="page-title">
+    <img src="logo.png" width="34" height="34" alt="" style="width:auto;object-fit:contain;flex-shrink:0">
+    Americano<span class="sr-only"> – tournament generator for padel, tennis, beach-tennis &amp; pickleball</span>
     <a href="https://luiswo.dev" target="_blank" rel="noopener noreferrer" aria-label="Luis Wollenschneider" style="margin-left:auto;opacity:.4;transition:opacity .2s;line-height:0;flex-shrink:0">
       <svg width="42" height="26" viewBox="0 0 103 62" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round" onmouseenter="this.parentElement.style.opacity='.85'" onmouseleave="this.parentElement.style.opacity='.4'">
         <path d="M4.5 42.5h10c3.333-5.333 1.667-5.333 5 0h4.475c1.087 3.176 2.185 3.602 3.3 0H35.5l4 8 3-36 3.016.757L48.5 45.5l5-3h5c6.667-8 3.333-8 10 0h8.773c1.451 2.34 2.903 2.552 4.354 0h3.666c.378-.991.784-1.088 1.227 0h2.138c.77-.943 1.55-.985 2.342 0h4.5" style="fill:none;fill-rule:nonzero;stroke:#ff5b1f;stroke-width:2.5px"/>
@@ -525,7 +585,7 @@ body::before {
         <circle cx="81" cy="50.5" r="3.5" style="fill:#ff5b1f"/>
       </svg>
     </a>
-  </div>
+  </h1>
 
   <div class="section-label">Mode</div>
   <div class="seg">
@@ -566,6 +626,33 @@ body::before {
       onkeydown="if(event.key==='Enter'){event.preventDefault();savePreset();}">
     <button onclick="savePreset()">Save</button>
   </div>
+
+  <details class="about">
+    <summary>About Americano &amp; how it works</summary>
+
+    <h2>What is an Americano tournament?</h2>
+    <p>Americano is a social round-robin format popular in <strong>padel</strong>, and just as useful for <strong>tennis</strong>, <strong>beach-tennis</strong> and <strong>pickleball</strong>. Every player or team meets every other one, games run in parallel across all available courts, and points from every game count toward the final ranking. Nobody is knocked out, so everyone plays the whole session.</p>
+
+    <h2>How this generator works</h2>
+    <ul>
+      <li>Pick a mode, enter names, and tap <strong>Generate schedule</strong>.</li>
+      <li>Enter each game's score as it finishes; standings update instantly.</li>
+      <li>Courts are assigned when a match starts: it takes the lowest free court number.</li>
+      <li>With an odd number of participants, one sits out (a bye) each round, clearly marked.</li>
+    </ul>
+
+    <h2>Singles, teams or mixer</h2>
+    <p><strong>Singles</strong> plays one person against another. <strong>Teams</strong> uses fixed pairs (or larger teams) that stay together all session. <strong>Mixer</strong> rotates partners every round, the classic padel Americano where you play with and against as many people as possible; you choose the team size.</p>
+
+    <h2>Fixed rounds or court by court</h2>
+    <p><strong>Fixed rounds</strong> builds the schedule one round at a time with the circle method, so everyone plays everyone exactly once per cycle before a new shuffled cycle begins. <strong>Court by court</strong> drops rounds entirely: tap <strong>New game</strong> whenever a court frees up, and the players who have waited longest (and played least) go next, avoiding repeat match-ups.</p>
+
+    <h2>Scoring and standings</h2>
+    <p>Each game result gives 3 points for a win, 1 for a draw and 0 for a loss. Ties in the table are broken by <strong>+/−</strong>: points scored minus points conceded across all games.</p>
+
+    <h2>Private and offline</h2>
+    <p>Free, no account, no tracking. Everything is stored on your device, scores survive closing the page, and the app keeps working without a connection once loaded. Save line-ups as presets, or share a link that pre-fills the whole setup.</p>
+  </details>
 
   <div class="creator-credit">
     <a href="https://luiswo.dev" target="_blank" rel="noopener noreferrer">
@@ -616,7 +703,7 @@ body::before {
 <!-- ──────────────── NAV ──────────────── -->
 <nav class="nav">
   <div class="nav-brand">
-    <img src="logo.png" height="26" style="width:auto;object-fit:contain">
+    <img src="logo.png" width="26" height="26" alt="" style="width:auto;object-fit:contain">
     <span>Americano</span>
   </div>
   <button class="nav-btn active" id="nav-setup" onclick="goTo('setup')">
