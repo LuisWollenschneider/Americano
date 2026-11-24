@@ -14,6 +14,7 @@ Every team (or player) plays every other team exactly once. Points scored in eac
 
 - **Singles or Teams mode** — toggle changes all labels throughout the app
 - **Courts assigned on start** — no court count to configure; a match gets the lowest free court number when you tap *Start* (or *New game*)
+- **Fixed teams in mixer** — mark an entry as *Fixed team* and it stands for a whole team (e.g. "Ann & Bob") that always plays together as one side and is never mixed with other players
 - **Court-by-court scheduling** — no rounds: tap *New game* whenever a court frees up. Players/teams waiting longest (and with fewest games) go next, avoiding repeat match-ups. Works in every mode
 - **Configurable game length** — set how many points per game (default 11)
 - **Round-robin schedule** — one round at a time via *Add round*; follows the circle method, so every participant plays every other exactly once per cycle before a new shuffled cycle starts
