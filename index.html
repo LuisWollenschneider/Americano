@@ -485,6 +485,45 @@ body::before {
   font-size: 12px; color: var(--muted); line-height: 1.5;
   margin: 8px 4px 0;
 }
+
+/* ── SHEET (modal) ────────────────────────────────── */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,.6);
+  display: none; align-items: flex-end; justify-content: center;
+}
+.sheet-backdrop.open { display: flex; }
+.sheet {
+  width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--sep); border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .sheet-backdrop { align-items: center; }
+  .sheet { border-radius: 18px; border-bottom: 1px solid var(--sep); }
+}
+.sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.sheet-title { font-size: 20px; font-weight: 800; flex: 1; }
+.sheet-close {
+  width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--card2); color: var(--muted); font-size: 16px; font-family: inherit;
+}
+.roster-row.left input { color: var(--muted); text-decoration: line-through; }
+.left-tag { font-size: 10px; font-weight: 700; color: var(--muted); margin-left: 4px; vertical-align: 1px; text-transform: uppercase; }
+.side-label { font-size: 12px; font-weight: 600; color: var(--muted); margin: 14px 4px 6px; }
+.pair-select {
+  flex: 1; min-width: 0; background: var(--card2); color: var(--text);
+  border: 1px solid var(--sep); border-radius: 9px; padding: 8px 10px;
+  font-size: 15px; font-family: inherit;
+}
+.tool-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.tool-btn {
+  flex: 1; padding: 10px; border-radius: var(--r); cursor: pointer;
+  background: var(--card); border: 1px solid var(--sep); color: var(--text);
+  font-size: 14px; font-weight: 600; font-family: inherit;
+}
+.tool-btn:active { border-color: var(--accent); color: var(--accent); }
 .pool-count { color: var(--muted); font-size: 11px; margin-left: 4px; }
 
 .seg-btn.active {
@@ -628,6 +667,7 @@ body::before {
   <div id="teams-list"></div>
   <button class="ghost-btn" id="add-btn" onclick="addTeam()">＋ Add team</button>
 
+  <p class="hint" id="draft-hint" style="display:none">A tournament is running with its own locked list of participants. Changes here only apply when you regenerate. To add a latecomer or remove someone who left, use <strong>Manage players</strong> on the Schedule tab.</p>
   <button class="primary-btn" id="gen-btn" onclick="generate()">Generate schedule</button>
   <button class="danger-btn" id="reset-btn" style="display:none" onclick="resetTournament()">↺ Reset &amp; start over</button>
 
@@ -751,6 +791,17 @@ body::before {
 
 <div id="toast" class="toast"></div>
 
+<!-- ──────────────── SHEET (players / pairing) ──────────────── -->
+<div id="sheet" class="sheet-backdrop" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <div class="sheet-title" id="sheet-title"></div>
+      <button class="sheet-close" onclick="closeSheet()" aria-label="Close">✕</button>
+    </div>
+    <div id="sheet-body"></div>
+  </div>
+</div>
+
 <script>
 let _toastTimer;
 function showToast(msg) {
@@ -774,7 +825,9 @@ let S = {
                         // mixer:    [{matches:[{team1:[],team2:[],s1,s2,ed}], byes:[]}]
                         // rolling:  [{rolling:true, matches:[{...,court,end}]}] — one pseudo-round;
                         //           s1===null means on court, end = completion order
-  rrOrders: [],          // teams/singles: shuffled round-robin order per cycle, rounds revealed on demand
+  rr: null,             // teams/singles: current round-robin cycle {order, start}; rounds revealed on demand
+  tour: null,           // locked snapshot taken at generate: {mode, teamSize, teams:[{id,name,fixed?,left?}]}
+                        // the setup list (S.teams) is only a draft from then on
   generated: false
 };
 
@@ -797,6 +850,18 @@ function load() {
     const raw = localStorage.getItem(STORE);
     if (raw) S = { ...S, ...JSON.parse(raw) };
   } catch(e){}
+  // older saves had no locked snapshot: take one from the setup list as it is now
+  if (S.generated && !S.tour)
+    S.tour = { mode: S.mode, teamSize: S.teamSize, teams: S.teams.map(t => ({ ...t })) };
+  // older saves kept one shuffled order per cycle
+  if (S.rrOrders) {
+    if (S.generated && !S.rr && S.tour.mode !== 'mixer' && !isRolling()) {
+      const n = S.tour.teams.length, perCycle = n + (n % 2) - 1;
+      const cycle = Math.floor(S.rounds.length / perCycle);
+      if (S.rrOrders[cycle]) S.rr = { order: S.rrOrders[cycle], start: cycle * perCycle };
+    }
+    delete S.rrOrders;
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -869,8 +934,8 @@ function goTo(name) {
    SETUP
 ═══════════════════════════════════════════ */
 // 'Team' or 'Player' depending on mode
-function noun(cap = true) {
-  const w = (S.mode === 'singles' || S.mode === 'mixer') ? 'player' : 'team';
+function noun(cap = true, mode = S.mode) {
+  const w = (mode === 'singles' || mode === 'mixer') ? 'player' : 'team';
   return cap ? w[0].toUpperCase() + w.slice(1) : w;
 }
 
@@ -884,6 +949,7 @@ function setRolling(on) {
 
 function syncGenBtn() {
   document.getElementById('reset-btn').style.display = S.generated ? '' : 'none';
+  document.getElementById('draft-hint').style.display = S.generated ? '' : 'none';
   document.getElementById('gen-btn').textContent = S.rolling
     ? (S.generated ? 'Restart session' : 'Start session')
     : (S.generated ? 'Regenerate schedule' : 'Generate schedule');
@@ -968,9 +1034,8 @@ function circleRound(order, r) {
   const list = [...order];
   if (list.length % 2 !== 0) list.push(null); // null = bye slot
   const n = list.length;
-  const rot = list.slice(1);
-  for (let k = 0; k < r; k++) rot.unshift(rot.pop()); // rotate
-  const ring = [list[0], ...rot];
+  const rest = list.slice(1), k = r % (n - 1 || 1);
+  const ring = [list[0], ...rest.slice(rest.length - k), ...rest.slice(0, rest.length - k)]; // rotate right by r
   const matches = [];
   let bye = null;
   for (let i = 0; i < n / 2; i++) {
@@ -982,14 +1047,50 @@ function circleRound(order, r) {
   return { matches, bye }; // bye is null when even number of teams
 }
 
-// next round on demand: walks a hidden round-robin order, starting a freshly
-// shuffled cycle once everyone has played everyone
+// next round on demand: walks a hidden round-robin order, starting a new cycle once
+// everyone has played everyone — or as soon as the line-up or a pairing was changed by hand
 function buildNextRound() {
-  const perCycle = S.teams.length + (S.teams.length % 2) - 1;
-  const r = S.rounds.length, cycle = Math.floor(r / perCycle);
-  if (!S.rrOrders) S.rrOrders = [];
-  if (!S.rrOrders[cycle]) S.rrOrders[cycle] = shuffle(S.teams.map(t => t.id));
-  return circleRound(S.rrOrders[cycle], r % perCycle);
+  const ids = activeIds();
+  const perCycle = ids.length + (ids.length % 2) - 1;
+  const r = S.rounds.length;
+  const sameRoster = S.rr && S.rr.order.length === ids.length && ids.every(id => S.rr.order.includes(id));
+  if (!sameRoster || r - S.rr.start >= perCycle) S.rr = { order: pickCycleOrder(ids, perCycle), start: r };
+  return circleRound(S.rr.order, r - S.rr.start);
+}
+
+// a new cycle plays everyone against everyone once whatever the order; with history
+// (late joiner, removal, manual edit) choose the order whose early rounds repeat
+// the fewest recent match-ups and don't give a bye to someone who is behind on games
+function pickCycleOrder(ids, perCycle) {
+  if (!S.rounds.length) return shuffle([...ids]);
+  const opp = {}, played = {}, lastOpp = new Set(), lastBye = new Set();
+  S.rounds.forEach((round, ri) => {
+    const isLast = ri === S.rounds.length - 1;
+    round.matches.forEach(m => {
+      const k = pairKey(m.t1, m.t2);
+      opp[k] = (opp[k] || 0) + 1;
+      played[m.t1] = (played[m.t1] || 0) + 1; played[m.t2] = (played[m.t2] || 0) + 1;
+      if (isLast) lastOpp.add(k);
+    });
+    if (isLast) [round.bye, ...(round.byes || [])].forEach(id => id && lastBye.add(id));
+  });
+  const maxPlayed = Math.max(0, ...ids.map(id => played[id] || 0));
+  let best = null, bestCost = Infinity;
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const order = shuffle([...ids]);
+    let cost = 0;
+    for (let r = 0; r < perCycle && cost < bestCost; r++) {
+      const w = perCycle - r; // earlier rounds matter more
+      const { matches, bye } = circleRound(order, r);
+      for (const m of matches) {
+        const k = pairKey(m.t1, m.t2);
+        cost += ((opp[k] || 0) * 10 + (r === 0 && lastOpp.has(k) ? 50 : 0)) * w;
+      }
+      if (bye) cost += ((maxPlayed - (played[bye] || 0)) * 20 + (r === 0 && lastBye.has(bye) ? 50 : 0)) * w;
+    }
+    if (cost < bestCost) { bestCost = cost; best = order; }
+  }
+  return best;
 }
 
 /* ═══════════════════════════════════════════
@@ -1007,14 +1108,15 @@ function shuffle(arr) {
 
 function buildPairHistory(players, existingRounds) {
   const teammates = {}, opponents = {}, lastTeammates = {}, lastByes = new Set();
-  const byeCount = {};
-  players.forEach(p => { byeCount[p.id] = 0; });
+  const played = {};
+  players.forEach(p => { played[p.id] = 0; });
 
   existingRounds.forEach((round, ri) => {
     const isLast = ri === existingRounds.length - 1;
     for (const m of round.matches) {
       if (!m.team1) continue;
       for (const team of [m.team1, m.team2]) {
+        for (const id of team) played[id] = (played[id] || 0) + 1;
         for (let i = 0; i < team.length; i++)
           for (let j = i + 1; j < team.length; j++) {
             const k = pairKey(team[i], team[j]);
@@ -1027,14 +1129,12 @@ function buildPairHistory(players, existingRounds) {
         opponents[k] = (opponents[k] || 0) + 1;
       }
     }
-    if (round.byes) round.byes.forEach(id => {
-      byeCount[id] = (byeCount[id] || 0) + 1;
-      if (isLast) lastByes.add(id);
-    });
+    if (isLast && round.byes) round.byes.forEach(id => lastByes.add(id));
   });
 
-  const minByes = Math.min(...Object.values(byeCount));
-  return { teammates, opponents, lastTeammates, lastByes, byeCount, minByes };
+  // only present players count: someone who left no longer holds back the maximum
+  const maxPlayed = Math.max(0, ...players.map(p => played[p.id]));
+  return { teammates, opponents, lastTeammates, lastByes, played, maxPlayed };
 }
 
 function scoreMixerGroups(groups, byes, history) {
@@ -1050,11 +1150,12 @@ function scoreMixerGroups(groups, byes, history) {
     for (const a of g.team1) for (const b of g.team2)
       score += (history.opponents[pairKey(a, b)] || 0);
   }
-  // bye balance: penalize anyone with more byes than the current minimum
-  // ×2000 per extra bye ensures balanced distribution before anything else
+  // bye balance: whoever has played the most games sits out first (with a fixed
+  // line-up that's whoever had the fewest byes; a latecomer catches up)
+  // ×2000 per game behind ensures balanced distribution before anything else
   for (const id of byes) {
-    const over = (history.byeCount[id] || 0) - history.minByes;
-    score += (over + 1) * 2000;
+    const behind = history.maxPlayed - (history.played[id] || 0);
+    score += (behind + 1) * 2000;
     if (history.lastByes.has(id)) score += 2000; // consecutive = double penalty
   }
   return score;
@@ -1064,8 +1165,8 @@ function scoreMixerGroups(groups, byes, history) {
 function isFixed(id) { return !!teamById(id)?.fixed; }
 
 // how many sides the given entries can field (fixed entries count as one side each)
-function sidesAvailable(ids, teamSize) {
-  const fixed = ids.filter(isFixed).length;
+function sidesAvailable(ids, teamSize, fixedFn = isFixed) {
+  const fixed = ids.filter(fixedFn).length;
   return fixed + Math.floor((ids.length - fixed) / teamSize);
 }
 
@@ -1109,7 +1210,12 @@ function buildMixerRound(players, teamSize, existingRounds) {
 }
 
 function addRound() {
-  S.rounds.push(S.mode === 'mixer' ? buildMixerRound(S.teams, S.teamSize, S.rounds) : buildNextRound());
+  const T = S.tour;
+  if (!canStartGame(activeIds())) {
+    showToast(T.mode === 'mixer' ? 'Not enough players for two sides' : `Need at least 2 ${noun(false, T.mode)}s`);
+    return;
+  }
+  S.rounds.push(T.mode === 'mixer' ? buildMixerRound(activeTeams(), T.teamSize, S.rounds) : buildNextRound());
   openRounds.add(S.rounds.length - 1);
   save(); renderRounds();
 }
@@ -1141,7 +1247,7 @@ function generate() {
 
   if (S.mode === 'mixer') {
     const minPlayers = S.teamSize * 2;
-    if (sidesAvailable(S.teams.map(t => t.id), S.teamSize) < 2) {
+    if (sidesAvailable(S.teams.map(t => t.id), S.teamSize, id => S.teams.find(t => t.id === id)?.fixed) < 2) {
       shakeAddBtn();
       showToast(S.teams.some(t => t.fixed)
         ? `Need enough players for two ${S.teamSize}v${S.teamSize} sides`
@@ -1149,10 +1255,16 @@ function generate() {
       return;
     }
   }
-  S.rrOrders = [];
-  if (S.rolling) S.rounds = [{ rolling: true, matches: [] }];
-  else S.rounds = [S.mode === 'mixer' ? buildMixerRound(S.teams, S.teamSize, []) : buildNextRound()]; // more via "Add round"
+  // lock the line-up: from here on the setup list is only a draft for the next generate
+  S.tour = {
+    mode: S.mode, teamSize: S.teamSize,
+    teams: S.teams.map(t => ({ id: t.id, name: t.name.trim(), ...(S.mode === 'mixer' && t.fixed ? { fixed: true } : {}) }))
+  };
+  S.rr = null;
+  S.rounds = [];
   S.generated = true;
+  if (S.rolling) S.rounds = [{ rolling: true, matches: [] }];
+  else S.rounds = [S.mode === 'mixer' ? buildMixerRound(activeTeams(), S.teamSize, []) : buildNextRound()]; // more via "Add round"
   openRounds = new Set([0]); // open first round only
   save();
   renderRounds();
@@ -1217,7 +1329,7 @@ function renderRounds() {
   }
   if (isRolling()) { renderRolling(el); return; }
 
-  el.innerHTML = '';
+  el.innerHTML = toolRowHtml();
 
   S.rounds.forEach((round, ri) => {
     const ms      = round.matches;
@@ -1235,7 +1347,7 @@ function renderRounds() {
     if (round.byes && round.byes.length > 0) {
       const names = round.byes.map(id => teamById(id)?.name).filter(Boolean).map(esc);
       if (names.length) byeHtml = `<div class="bye-row">💤 <strong>${names.join(', ')}</strong> ${names.length === 1 ? 'has' : 'have'} a bye this round</div>`;
-    } else if (round.bye) {
+    } else if (round.bye) { // teams / singles
       const byeTeam = teamById(round.bye);
       if (byeTeam) byeHtml = `<div class="bye-row">💤 <strong>${esc(byeTeam.name)}</strong> has a bye this round</div>`;
     }
@@ -1296,6 +1408,7 @@ function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
         <span class="match-court">${court ? `Court ${court}` : `Match ${mi + 1}`}</span>
         <div>
           <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit</div>
+          <div class="edit-link" onclick="openPairing(${ri},${mi})">Pairing</div>
           <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
         </div>
       </div>
@@ -1337,6 +1450,7 @@ function matchHtml(m, ri, mi, court, inPlayIds = new Set()) {
         placeholder="0" value="${v2}" id="s2-${ri}-${mi}" autocomplete="off">
     </div>
     <button class="save-btn" onclick="saveMatch(${ri},${mi})">Save score</button>
+    <div class="edit-link" onclick="openPairing(${ri},${mi})">Edit pairing</div>
   </div>`;
 }
 
@@ -1362,6 +1476,7 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
         <span class="match-court">${court ? `Court ${court}` : `Match ${mi + 1}`}</span>
         <div>
           <div class="edit-link" onclick="editMatch(${ri},${mi})">Edit</div>
+          <div class="edit-link" onclick="openPairing(${ri},${mi})">Pairing</div>
           <div class="edit-link" style="color:var(--red)" onclick="deleteMatch(${ri},${mi})">Delete</div>
         </div>
       </div>
@@ -1412,6 +1527,7 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
         placeholder="0" value="${v2}" id="s2-${ri}-${mi}" autocomplete="off">
     </div>
     <button class="save-btn" onclick="saveMatch(${ri},${mi})">Save score</button>
+    <div class="edit-link" onclick="openPairing(${ri},${mi})">Edit pairing</div>
   </div>`;
 }
 
@@ -1486,14 +1602,14 @@ function deleteMatch(ri, mi) {
 function isRolling() { return !!S.rounds[0]?.rolling; }
 function rollingGames() { return S.rounds[0].matches; }
 function matchIds(m) { return m.team1 ? [...m.team1, ...m.team2] : [m.t1, m.t2]; }
-function playersPerGame() { return S.mode === 'mixer' ? S.teamSize * 2 : 2; }
-function canStartGame(pool) { return S.mode === 'mixer' ? sidesAvailable(pool, S.teamSize) >= 2 : pool.length >= 2; }
+function playersPerGame() { return S.tour.mode === 'mixer' ? S.tour.teamSize * 2 : 2; }
+function canStartGame(pool) { return S.tour.mode === 'mixer' ? sidesAvailable(pool, S.tour.teamSize) >= 2 : pool.length >= 2; }
 
 // ids not on court, in priority order: fewest games, then longest wait
 function rollingPool(stats = rollingStats()) {
   const busy = new Set();
   rollingGames().forEach(m => { if (m.s1 === null) matchIds(m).forEach(id => busy.add(id)); });
-  const pool = shuffle(S.teams.filter(t => !busy.has(t.id)).map(t => t.id)); // random among equals
+  const pool = shuffle(activeIds().filter(id => !busy.has(id))); // random among equals
   return pool.sort((a, b) =>
     (stats.played[a] || 0) - (stats.played[b] || 0) || (stats.lastEnd[a] || 0) - (stats.lastEnd[b] || 0));
 }
@@ -1536,7 +1652,7 @@ function rollingPenalty(sides, st, pos, minPlayed) {
         score += (st.mates[pairKey(side[i], side[j])] || 0) * 300
                + (st.lastMates[side[i]]?.has(side[j]) ? 400 : 0);
   // opponents matter most when there is no teammate variety (teams / singles)
-  const [oppW, lastOppW] = S.mode === 'mixer' ? [30, 60] : [300, 500];
+  const [oppW, lastOppW] = S.tour.mode === 'mixer' ? [30, 60] : [300, 500];
   for (const a of sides[0]) for (const b of sides[1])
     score += (st.opps[pairKey(a, b)] || 0) * oppW
            + (st.lastOpps[a]?.has(b) || st.lastOpps[b]?.has(a) ? lastOppW : 0);
@@ -1552,7 +1668,8 @@ function pickRollingGame() {
   const minPlayed = st.played[pool[0]] || 0;
 
   const candidates = [];
-  if (S.mode !== 'mixer') {
+  const teamSize = S.tour.teamSize;
+  if (S.tour.mode !== 'mixer') {
     for (let i = 0; i < pool.length; i++)
       for (let j = i + 1; j < pool.length; j++) candidates.push([[pool[i]], [pool[j]]]);
   } else {
@@ -1561,10 +1678,10 @@ function pickRollingGame() {
       const spread = attempt === 0 ? 0 : Math.random() * pool.length;
       const order = pool.map((id, i) => [id, i + Math.random() * spread])
         .sort((a, b) => a[1] - b[1]).map(x => x[0]);
-      const { sides } = formSides(order, S.teamSize, 2);
+      const { sides } = formSides(order, teamSize, 2);
       if (sides.length < 2) continue;
       const loose = shuffle(sides.flat().filter(id => !isFixed(id))); // split loose players randomly
-      const split = sides.map(side => isFixed(side[0]) ? side : loose.splice(0, S.teamSize));
+      const split = sides.map(side => isFixed(side[0]) ? side : loose.splice(0, teamSize));
       candidates.push(shuffle(split));
     }
   }
@@ -1582,7 +1699,7 @@ function newGame() {
   if (!sides) return;
   const games = rollingGames();
   const base = { s1: null, s2: null, ed: false, ip: true, court: freeCourt() };
-  games.push(S.mode === 'mixer'
+  games.push(S.tour.mode === 'mixer'
     ? { team1: sides[0], team2: sides[1], ...base }
     : { t1: sides[0][0], t2: sides[1][0], ...base });
   save(); renderRoundsPreserving();
@@ -1603,9 +1720,9 @@ function renderRolling(el) {
   const canStart = canStartGame(pool);
   const cards = list => `<div class="match-grid">${list.map(([m, mi]) => matchHtml(m, 0, mi, m.court)).join('')}</div>`;
 
-  el.innerHTML =
+  el.innerHTML = toolRowHtml() +
     `<button class="primary-btn" style="margin-top:0" onclick="newGame()" ${canStart ? '' : 'disabled'}>＋ New game</button>` +
-    (canStart ? '' : `<p class="hint" style="text-align:center">${S.mode === 'mixer' && S.teams.some(t => t.fixed) ? 'Not enough waiting players for two sides' : `Need ${need} waiting ${noun(false)}s`} to start a game — finish a game to free some up.</p>`) +
+    (canStart ? '' : `<p class="hint" style="text-align:center">${S.tour.mode === 'mixer' && S.tour.teams.some(t => t.fixed) ? 'Not enough waiting players for two sides' : `Need ${need} waiting ${noun(false, S.tour.mode)}s`} to start a game — finish a game to free some up.</p>`) +
     `<div class="section-label">Waiting (${pool.length})</div>` +
     (pool.length
       ? `<div class="preset-names">${pool.map(id =>
@@ -1618,13 +1735,191 @@ function renderRolling(el) {
   setTimeout(fixLastRows, 0);
 }
 
+
+/* ═══════════════════════════════════════════
+   SHEET  — manage players / edit pairing
+═══════════════════════════════════════════ */
+let sheetKind = null, pairEdit = null;
+
+function openSheet(kind, title) {
+  sheetKind = kind;
+  document.getElementById('sheet-title').textContent = title;
+  document.getElementById('sheet').classList.add('open');
+  renderSheet();
+}
+function closeSheet() {
+  if (!sheetKind) return;
+  sheetKind = null; pairEdit = null;
+  document.getElementById('sheet').classList.remove('open');
+  renderRoundsPreserving(); renderStandings(); // pick up renames
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+function renderSheet() {
+  if (sheetKind === 'players') renderPlayersSheet();
+  else if (sheetKind === 'pairing') renderPairingSheet();
+}
+
+function toolRowHtml() {
+  return `<div class="tool-row"><button class="tool-btn" onclick="openPlayers()">Manage ${noun(false, S.tour.mode)}s</button></div>`;
+}
+
+/* ── manage players ── */
+let addFixed = false;
+function openPlayers() { addFixed = false; openSheet('players', `Manage ${noun(false, S.tour.mode)}s`); }
+
+function inAnyMatch(id) { return S.rounds.some(r => r.matches.some(m => matchIds(m).includes(id))); }
+
+function renderPlayersSheet() {
+  const T = S.tour, isMixer = T.mode === 'mixer', n = noun(false, T.mode);
+  const rows = T.teams.map((t, i) =>
+    `<div class="input-row roster-row${t.left ? ' left' : ''}">` +
+      `<input type="text" value="${esc(t.name)}" aria-label="Name" oninput="renameTour(${i},this.value)">` +
+      (isMixer && t.fixed ? `<span class="fixed-tag">${lockSvg()}TEAM</span>` : '') +
+      `<button class="fix-btn${t.left ? ' on' : ''}" onclick="toggleLeft(${i})">${t.left ? 'Bring back' : 'Remove'}</button>` +
+    `</div>`).join('');
+  document.getElementById('sheet-body').innerHTML =
+    `<p class="hint" style="margin:0 4px 4px">This list is locked to the running tournament and is separate from the Setup page. Changes apply from the next ${isRolling() ? 'game' : 'round'}; anything already scheduled stays as it is (use <strong>Edit pairing</strong> to swap someone in).</p>` +
+    `<div class="section-label">In the tournament (${activeTeams().length})</div>` + rows +
+    `<div class="section-label">Add a latecomer</div>` +
+    `<div class="input-row">` +
+      `<input type="text" id="late-name" placeholder="${noun(true, T.mode)} name" onkeydown="if(event.key==='Enter'){event.preventDefault();addLate();}">` +
+      (isMixer ? `<button class="fix-btn${addFixed ? ' on' : ''}" onclick="addFixed=!addFixed;renderPlayersSheet();document.getElementById('late-name').focus()" aria-pressed="${addFixed}">${addFixed ? lockSvg() : ''}Fixed team</button>` : '') +
+    `</div>` +
+    `<button class="primary-btn" style="margin-top:4px" onclick="addLate()">＋ Add ${n}</button>`;
+}
+
+function renameTour(i, v) { S.tour.teams[i].name = v; save(); }
+
+function addLate() {
+  const input = document.getElementById('late-name');
+  const name = input.value.trim();
+  if (!name) { input.classList.remove('error'); void input.offsetWidth; input.classList.add('error'); input.focus(); return; }
+  S.tour.teams.push({ id: uid(), name, ...(S.tour.mode === 'mixer' && addFixed ? { fixed: true } : {}) });
+  save(); renderPlayersSheet(); renderRoundsPreserving(); renderStandings();
+  showToast(`${name} joins from the next ${isRolling() ? 'game' : 'round'}`);
+  document.getElementById('late-name').focus();
+}
+
+function toggleLeft(i) {
+  const t = S.tour.teams[i];
+  if (t.left) { delete t.left; showToast(`${t.name} is back in`); }
+  else if (!inAnyMatch(t.id)) { S.tour.teams.splice(i, 1); showToast(`${t.name} removed`); } // never played: drop entirely
+  else {
+    t.left = true;
+    const pending = S.rounds.reduce((c, r) => c + r.matches.filter(m => m.s1 === null && matchIds(m).includes(t.id)).length, 0);
+    showToast(pending
+      ? `${t.name} removed — still in ${pending} unfinished game${pending > 1 ? 's' : ''}; use Edit pairing to swap`
+      : `${t.name} removed from future ${isRolling() ? 'games' : 'rounds'}`);
+  }
+  save(); renderPlayersSheet(); renderRoundsPreserving(); renderStandings();
+}
+
+/* ── edit pairing ── */
+function openPairing(ri, mi) {
+  const m = S.rounds[ri].matches[mi];
+  pairEdit = { ri, mi, sides: m.team1 ? [[...m.team1], [...m.team2]] : [[m.t1], [m.t2]] };
+  openSheet('pairing', 'Edit pairing');
+}
+
+// where else is `id` in this round? → {mi, si, k} for a match slot, {bye:true} for a bye, or null
+function locateInRound(ri, id, skipMi) {
+  const round = S.rounds[ri];
+  for (let mi = 0; mi < round.matches.length; mi++) {
+    if (mi === skipMi) continue;
+    const m = round.matches[mi];
+    if (isRolling() && m.s1 !== null) continue; // finished rolling games are history, not the same "round"
+    const sides = m.team1 ? [m.team1, m.team2] : [[m.t1], [m.t2]];
+    for (let si = 0; si < 2; si++) { const k = sides[si].indexOf(id); if (k !== -1) return { mi, si, k }; }
+  }
+  if ((round.byes || []).includes(id) || round.bye === id) return { bye: true };
+  return null;
+}
+
+function renderPairingSheet() {
+  const { ri, mi, sides } = pairEdit, T = S.tour, round = S.rounds[ri], m = round.matches[mi];
+  const swapsWithin = !isRolling() || m.s1 === null; // a finished rolling game is edited on its own
+  const label = id => {
+    const t = teamById(id); let note = '';
+    if (t?.left) note = ' (left)';
+    else if (swapsWithin && !sides.flat().includes(id)) {
+      const at = locateInRound(ri, id, mi);
+      if (at?.bye) note = ' (bye — swaps in)';
+      else if (at) {
+        const om = round.matches[at.mi];
+        note = isRolling() ? ` (court ${om.court} — swaps)` : ` (${om.court ? 'court ' + om.court : 'match ' + (at.mi + 1)} — swaps)`;
+      }
+    }
+    return esc((t?.name || '?') + note);
+  };
+  const order = [...activeTeams(), ...T.teams.filter(t => t.left)];
+  const selects = (si) => sides[si].map((id, k) => {
+    const fixed = isFixed(id);
+    const opts = order.filter(t => T.mode !== 'mixer' || !!t.fixed === fixed); // a fixed team only trades places with a fixed team
+    return `<div class="input-row" style="padding:8px 10px">` +
+      `<select class="pair-select" onchange="setPairSlot(${si},${k},this.value)" aria-label="Side ${si + 1}, slot ${k + 1}">` +
+      opts.map(t => `<option value="${t.id}"${t.id === id ? ' selected' : ''}>${label(t.id)}</option>`).join('') +
+      `</select></div>`;
+  }).join('');
+  const side = si => T.mode === 'mixer' ? `Side ${si + 1}` : noun(true, T.mode) + ' ' + (si + 1);
+  document.getElementById('sheet-body').innerHTML =
+    `<p class="hint" style="margin:0 4px 4px">${m.s1 !== null ? `The recorded score (${m.s1}–${m.s2}) stays; ` : ''}Standings are recalculated and ${isRolling() ? 'upcoming games take' : 'later rounds take'} the new pairing into account.${swapsWithin ? ` Picking someone who is elsewhere in this ${isRolling() ? 'set of running games' : 'round'} swaps the two.` : ''}</p>` +
+    `<div class="side-label">${side(0)}</div>${selects(0)}` +
+    `<div class="side-label">${side(1)}</div>${selects(1)}` +
+    `<button class="primary-btn" onclick="savePairing()">Save pairing</button>`;
+}
+
+function setPairSlot(si, k, id) {
+  const sides = pairEdit.sides, old = sides[si][k];
+  // already in this match? swap the two slots
+  for (let s2 = 0; s2 < 2; s2++) { const k2 = sides[s2].indexOf(id); if (k2 !== -1) sides[s2][k2] = old; }
+  sides[si][k] = id;
+  renderPairingSheet();
+}
+
+function savePairing() {
+  const { ri, mi, sides } = pairEdit, round = S.rounds[ri], m = round.matches[mi];
+  const before = matchIds(m), after = sides.flat();
+  const added = after.filter(id => !before.includes(id));
+  const removed = before.filter(id => !after.includes(id));
+  const swapsWithin = !isRolling() || m.s1 === null;
+
+  // each newcomer leaves a hole elsewhere in the round: the displaced player of the same kind fills it
+  if (swapsWithin) for (const id of added) {
+    const at = locateInRound(ri, id, mi);
+    const ri2 = removed.findIndex(r => isFixed(r) === isFixed(id));
+    if (!at || ri2 === -1) continue;
+    const out = removed.splice(ri2, 1)[0];
+    if (at.bye) {
+      if (round.byes) round.byes = round.byes.map(x => x === id ? out : x);
+      else round.bye = out;
+    } else {
+      const om = round.matches[at.mi];
+      if (om.team1) (at.si ? om.team2 : om.team1)[at.k] = out;
+      else om[at.si ? 't2' : 't1'] = out;
+    }
+  }
+  // anyone displaced without a spot to take over sits this round out
+  if (!isRolling()) for (const id of removed) {
+    if (round.byes) round.byes.push(id);
+    else if (!round.bye) round.bye = id;
+    else { round.byes = [round.bye, id]; delete round.bye; }
+  }
+
+  if (m.team1) { m.team1 = sides[0]; m.team2 = sides[1]; }
+  else { m.t1 = sides[0][0]; m.t2 = sides[1][0]; }
+  if (!isRolling()) S.rr = null; // round robin: next round starts a fresh cycle that accounts for the edit
+  save();
+  closeSheet();
+  showToast('Pairing updated');
+}
+
 /* ═══════════════════════════════════════════
    STANDINGS
 ═══════════════════════════════════════════ */
 function computeStandings() {
   const map = {};
-  S.teams.forEach(t => {
-    map[t.id] = { name: t.name, p: 0, w: 0, l: 0, d: 0, pts: 0, pa: 0 };
+  S.tour.teams.forEach(t => {
+    map[t.id] = { name: t.name, left: !!t.left, p: 0, w: 0, l: 0, d: 0, pts: 0, pa: 0 };
   });
   S.rounds.forEach(round => {
     round.matches.forEach(m => {
@@ -1654,7 +1949,8 @@ function computeStandings() {
       }
     });
   });
-  return Object.values(map).sort((a, b) => {
+  // someone who left before playing a game doesn't belong in the table
+  return Object.values(map).filter(r => !r.left || r.p).sort((a, b) => {
     const bScore = b.w * 3 + b.d;
     const aScore = a.w * 3 + a.d;
     if (bScore !== aScore) return bScore - aScore;
@@ -1682,7 +1978,7 @@ function renderStandings() {
         `<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>`) +
     `<table class="s-table">
       <thead><tr>
-        <th>#  ${S.mode === 'mixer' ? (S.teams.some(t => t.fixed) ? 'Player / Team' : 'Player') : noun()}</th>
+        <th>#  ${S.tour.mode === 'mixer' ? (S.tour.teams.some(t => t.fixed) ? 'Player / Team' : 'Player') : noun(true, S.tour.mode)}</th>
         <th>P</th>
         <th style="color:var(--green)">W</th>
         <th style="color:var(--muted)">D</th>
@@ -1691,7 +1987,7 @@ function renderStandings() {
       </tr></thead>
       <tbody>
       ${rows.map((r,i) => `<tr>
-        <td><span class="rank-num ${rankClass(i)}">${i+1}</span><span class="s-name">${esc(r.name)}</span></td>
+        <td><span class="rank-num ${rankClass(i)}">${i+1}</span><span class="s-name">${esc(r.name)}</span>${r.left ? '<span class="left-tag">left</span>' : ''}</td>
         <td>${r.p}</td>
         <td style="color:var(--green);font-weight:700">${r.w}</td>
         <td style="color:var(--muted);font-weight:700">${r.d}</td>
@@ -1801,7 +2097,10 @@ function renderPresets() {
 /* ═══════════════════════════════════════════
    UTILS
 ═══════════════════════════════════════════ */
-function teamById(id) { return S.teams.find(t => t.id === id); }
+// once generated, everything about the tournament reads the locked snapshot, never the setup draft
+function teamById(id) { return (S.tour && S.generated ? S.tour.teams : S.teams).find(t => t.id === id); }
+function activeTeams() { return S.tour.teams.filter(t => !t.left); }
+function activeIds() { return activeTeams().map(t => t.id); }
 
 let _resizeTimer;
 window.addEventListener('resize', () => {

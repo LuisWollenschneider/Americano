@@ -20,6 +20,9 @@ Every team (or player) plays every other team exactly once. Points scored in eac
 - **Round-robin schedule** — one round at a time via *Add round*; follows the circle method, so every participant plays every other exactly once per cycle before a new shuffled cycle starts
 - **Bye handling** — odd number of participants? one sits out each round, clearly shown
 - **Score entry** — tap a round, enter scores, save; edit anytime
+- **Locked line-up** — generating locks mode, team size and participants; the Setup page becomes a draft that only applies when you regenerate
+- **Manage players** — on the Schedule tab: add a latecomer, remove someone who left (or bring them back), rename; changes apply from the next round/game. Latecomers get priority so they aren't benched
+- **Edit pairing** — change who plays in any match; picking someone who is elsewhere in the same round (or on the bye) swaps the two. Standings recalculate and later rounds account for the edit
 - **Live standings** — sorted by W=3, D=1, L=0 points; tie-break by `points_scored - points_conceded`
 - **Offline-first** — no network needed after first load
 - **Persistent** — scores survive page close via `localStorage`, all on-device
