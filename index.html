@@ -159,6 +159,8 @@ body::before {
   white-space: nowrap; transition: background .1s, color .1s;
 }
 .fix-btn.on { background: none; border-color: var(--accent); color: var(--accent); }
+.lock-ic { vertical-align: -1px; margin-right: 4px; }
+.preset-tag .lock-ic { margin: 0 0 0 4px; }
 .fixed-tag { font-size: 10px; font-weight: 700; color: var(--accent); margin-left: 4px; vertical-align: 1px; }
 
 .ghost-btn {
@@ -921,7 +923,7 @@ function renderSetup() {
          oninput="S.teams[${i}].name=this.value;save()"
          onkeydown="if(event.key==='Enter'){event.preventDefault();if(${i}===S.teams.length-1&&this.value.trim())addTeam();}else if(event.key==='Backspace'&&!this.value&&${i}===S.teams.length-1&&${i}>0){event.preventDefault();removeTeam(${i});const ins=document.getElementById('teams-list').querySelectorAll('input');if(ins.length){const el=ins[ins.length-1];el.focus();const n=el.value.length;el.setSelectionRange(n,n);}}">` +
       (S.mode === 'mixer'
-        ? `<button class="fix-btn${t.fixed ? ' on' : ''}" onclick="toggleFixed(${i})" aria-pressed="${!!t.fixed}" title="A fixed team always plays together and is not mixed with other players">${t.fixed ? '🔒 ' : ''}Fixed team</button>`
+        ? `<button class="fix-btn${t.fixed ? ' on' : ''}" onclick="toggleFixed(${i})" aria-pressed="${!!t.fixed}" title="A fixed team always plays together and is not mixed with other players">${t.fixed ? LOCK_SVG : ''}Fixed team</button>`
         : '') +
       `<button class="del-btn" onclick="removeTeam(${i})">×</button>`;
     list.appendChild(d);
@@ -940,6 +942,7 @@ function addTeam() {
   if (inputs.length) inputs[inputs.length - 1].focus();
 }
 
+const LOCK_SVG = '<svg class="lock-ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 function toggleFixed(i) {
   S.teams[i].fixed = !S.teams[i].fixed;
   save(); renderSetup();
@@ -1774,7 +1777,7 @@ function renderPresets() {
     const noun = p.mode === 'teams' ? 'team' : 'player';
     const meta = `${modeLabel(p.mode)} · ${p.rolling ? 'Court by court' : 'Fixed rounds'} · ${p.teams.length} ${noun}${p.teams.length !== 1 ? 's' : ''}` +
       (p.mode === 'mixer' ? ` · ${p.teamSize}v${p.teamSize}` : '');
-    const tags = p.teams.map(t => `<span class="preset-tag">${esc(t.name)}${p.mode === 'mixer' && t.fixed ? ' 🔒' : ''}</span>`).join('');
+    const tags = p.teams.map(t => `<span class="preset-tag">${esc(t.name)}${p.mode === 'mixer' && t.fixed ? LOCK_SVG : ''}</span>`).join('');
     const isOpen = openPresets.has(p.id);
     return `<div class="preset-item${isOpen ? ' open' : ''}" id="preset-${p.id}">
       <div class="preset-header" onclick="togglePreset('${p.id}')">
