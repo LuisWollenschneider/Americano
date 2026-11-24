@@ -134,7 +134,7 @@ body::before {
   padding: 12px 16px; margin-bottom: 8px; gap: 10px;
 }
 .input-row input {
-  flex: 1; background: none; border: none; outline: none;
+  flex: 1; min-width: 0; background: none; border: none; outline: none;
   color: var(--text); font-size: 16px; font-family: inherit;
 }
 .input-row input::placeholder { color: var(--muted); }
@@ -152,6 +152,14 @@ body::before {
   transition: background .1s;
 }
 .del-btn:active { background: var(--red); color: #fff; }
+.fix-btn {
+  flex-shrink: 0; height: 26px; padding: 0 10px; border-radius: 13px;
+  background: var(--card2); border: 1px solid transparent; color: var(--muted);
+  font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+  white-space: nowrap; transition: background .1s, color .1s;
+}
+.fix-btn.on { background: none; border-color: var(--accent); color: var(--accent); }
+.fixed-tag { font-size: 10px; font-weight: 700; color: var(--accent); margin-left: 4px; vertical-align: 1px; }
 
 .ghost-btn {
   width: 100%; padding: 13px; border-radius: var(--r);
@@ -608,6 +616,7 @@ body::before {
       <div class="stepper-val" id="teamsize-val">2</div>
       <button class="step-btn" onclick="adj('teamSize',1)">+</button>
     </div>
+    <p class="hint">Tap <strong>Fixed team</strong> on an entry to keep it together: it stands for a whole team (e.g. "Ann &amp; Bob") that always plays as one side and is never split up.</p>
   </div>
 
   <div class="section-label" style="display:flex;align-items:center">
@@ -911,6 +920,9 @@ function renderSetup() {
       `<input type="text" placeholder="${noun()} ${i+1}" value="${esc(t.name)}"
          oninput="S.teams[${i}].name=this.value;save()"
          onkeydown="if(event.key==='Enter'){event.preventDefault();if(${i}===S.teams.length-1&&this.value.trim())addTeam();}else if(event.key==='Backspace'&&!this.value&&${i}===S.teams.length-1&&${i}>0){event.preventDefault();removeTeam(${i});const ins=document.getElementById('teams-list').querySelectorAll('input');if(ins.length){const el=ins[ins.length-1];el.focus();const n=el.value.length;el.setSelectionRange(n,n);}}">` +
+      (S.mode === 'mixer'
+        ? `<button class="fix-btn${t.fixed ? ' on' : ''}" onclick="toggleFixed(${i})" aria-pressed="${!!t.fixed}" title="A fixed team always plays together and is not mixed with other players">${t.fixed ? '🔒 ' : ''}Fixed team</button>`
+        : '') +
       `<button class="del-btn" onclick="removeTeam(${i})">×</button>`;
     list.appendChild(d);
   });
@@ -926,6 +938,11 @@ function addTeam() {
   save(); renderSetup();
   const inputs = document.getElementById('teams-list').querySelectorAll('input');
   if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function toggleFixed(i) {
+  S.teams[i].fixed = !S.teams[i].fixed;
+  save(); renderSetup();
 }
 
 function removeTeam(i) {
@@ -1040,23 +1057,41 @@ function scoreMixerGroups(groups, byes, history) {
   return score;
 }
 
+// fixed entries stand for a whole team: they fill one side on their own and are never split
+function isFixed(id) { return !!teamById(id)?.fixed; }
+
+// how many sides the given entries can field (fixed entries count as one side each)
+function sidesAvailable(ids, teamSize) {
+  const fixed = ids.filter(isFixed).length;
+  return fixed + Math.floor((ids.length - fixed) / teamSize);
+}
+
+// walk `ids` in order, forming up to `needed` sides; everyone not placed is returned in `rest`
+function formSides(ids, teamSize, needed) {
+  const sides = [], rest = [];
+  let pending = [];
+  for (const id of ids) {
+    if (sides.length >= needed) { rest.push(id); continue; }
+    if (isFixed(id)) { sides.push([id]); continue; }
+    pending.push(id);
+    if (pending.length === teamSize) { sides.push(pending); pending = []; }
+  }
+  return { sides, rest: [...pending, ...rest] };
+}
+
 function buildMixerRound(players, teamSize, existingRounds) {
   // shuffle input so identical configs produce different schedules
   const ids = shuffle(players.map(p => p.id));
-  const perMatch = teamSize * 2;
-  const numMatches = Math.floor(ids.length / perMatch);
+  const numMatches = Math.floor(sidesAvailable(ids, teamSize) / 2);
   const history = buildPairHistory(players, existingRounds);
 
   let best = null, bestScore = Infinity;
   for (let attempt = 0; attempt < 1000; attempt++) {
-    const perm = shuffle([...ids]);
-    const playing = perm.slice(0, numMatches * perMatch);
-    const byes    = perm.slice(numMatches * perMatch);
+    const { sides, rest: byes } = formSides(shuffle([...ids]), teamSize, numMatches * 2);
+    shuffle(sides);
     const groups  = [];
-    for (let i = 0; i < numMatches; i++) {
-      const g = playing.slice(i * perMatch, (i + 1) * perMatch);
-      groups.push({ team1: g.slice(0, teamSize), team2: g.slice(teamSize) });
-    }
+    for (let i = 0; i < numMatches; i++)
+      groups.push({ team1: sides[2 * i], team2: sides[2 * i + 1] });
     const score = scoreMixerGroups(groups, byes, history);
     // on tie, randomly replace so equally-good solutions vary
     if (score < bestScore || (score === bestScore && Math.random() < 0.3)) {
@@ -1103,7 +1138,13 @@ function generate() {
 
   if (S.mode === 'mixer') {
     const minPlayers = S.teamSize * 2;
-    if (S.teams.length < minPlayers) { shakeAddBtn(); showToast(`Need at least ${minPlayers} players for ${S.teamSize}v${S.teamSize}`); return; }
+    if (sidesAvailable(S.teams.map(t => t.id), S.teamSize) < 2) {
+      shakeAddBtn();
+      showToast(S.teams.some(t => t.fixed)
+        ? `Need enough players for two ${S.teamSize}v${S.teamSize} sides`
+        : `Need at least ${minPlayers} players for ${S.teamSize}v${S.teamSize}`);
+      return;
+    }
   }
   S.rrOrders = [];
   if (S.rolling) S.rounds = [{ rolling: true, matches: [] }];
@@ -1323,7 +1364,7 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
       </div>
       <div class="mixer-row">
         <div class="mixer-team-col">
-          ${team1.map(p => `<div class="mixer-player ${t1win?'win':''}">${esc(p.name)}</div>`).join('')}
+          ${team1.map(p => `<div class="mixer-player ${t1win?'win':''}">${esc(p.name)}${p.fixed ? '<span class="fixed-tag">TEAM</span>' : ''}</div>`).join('')}
         </div>
         <div class="score-badge" style="flex-shrink:0">
           <span class="sc ${t1win?'win':''}">${m.s1}</span>
@@ -1331,7 +1372,7 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
           <span class="sc ${t2win?'win':''}">${m.s2}</span>
         </div>
         <div class="mixer-team-col right">
-          ${team2.map(p => `<div class="mixer-player ${t2win?'win':''}">${esc(p.name)}</div>`).join('')}
+          ${team2.map(p => `<div class="mixer-player ${t2win?'win':''}">${esc(p.name)}${p.fixed ? '<span class="fixed-tag">TEAM</span>' : ''}</div>`).join('')}
         </div>
       </div>
     </div>`;
@@ -1353,11 +1394,11 @@ function mixerMatchHtml(m, ri, mi, court, inPlayIds = new Set()) {
     </div>
     <div class="mixer-row" style="margin-bottom:10px">
       <div class="mixer-team-col">
-        ${team1.map(p => `<div class="mixer-player"${isWaiting&&inPlayIds.has(p.id)?' style="color:var(--accent)"':''}>${esc(p.name)}</div>`).join('')}
+        ${team1.map(p => `<div class="mixer-player"${isWaiting&&inPlayIds.has(p.id)?' style="color:var(--accent)"':''}>${esc(p.name)}${p.fixed ? '<span class="fixed-tag">TEAM</span>' : ''}</div>`).join('')}
       </div>
       <span class="vs-tag" style="flex-shrink:0">vs</span>
       <div class="mixer-team-col right">
-        ${team2.map(p => `<div class="mixer-player"${isWaiting&&inPlayIds.has(p.id)?' style="color:var(--accent)"':''}>${esc(p.name)}</div>`).join('')}
+        ${team2.map(p => `<div class="mixer-player"${isWaiting&&inPlayIds.has(p.id)?' style="color:var(--accent)"':''}>${esc(p.name)}${p.fixed ? '<span class="fixed-tag">TEAM</span>' : ''}</div>`).join('')}
       </div>
     </div>
     <div class="score-row">
@@ -1443,6 +1484,7 @@ function isRolling() { return !!S.rounds[0]?.rolling; }
 function rollingGames() { return S.rounds[0].matches; }
 function matchIds(m) { return m.team1 ? [...m.team1, ...m.team2] : [m.t1, m.t2]; }
 function playersPerGame() { return S.mode === 'mixer' ? S.teamSize * 2 : 2; }
+function canStartGame(pool) { return S.mode === 'mixer' ? sidesAvailable(pool, S.teamSize) >= 2 : pool.length >= 2; }
 
 // ids not on court, in priority order: fewest games, then longest wait
 function rollingPool(stats = rollingStats()) {
@@ -1491,7 +1533,7 @@ function rollingPenalty(sides, st, pos, minPlayed) {
         score += (st.mates[pairKey(side[i], side[j])] || 0) * 300
                + (st.lastMates[side[i]]?.has(side[j]) ? 400 : 0);
   // opponents matter most when there is no teammate variety (teams / singles)
-  const [oppW, lastOppW] = sides[0].length > 1 ? [30, 60] : [300, 500];
+  const [oppW, lastOppW] = S.mode === 'mixer' ? [30, 60] : [300, 500];
   for (const a of sides[0]) for (const b of sides[1])
     score += (st.opps[pairKey(a, b)] || 0) * oppW
            + (st.lastOpps[a]?.has(b) || st.lastOpps[b]?.has(a) ? lastOppW : 0);
@@ -1501,7 +1543,7 @@ function rollingPenalty(sides, st, pos, minPlayed) {
 function pickRollingGame() {
   const st = rollingStats();
   const pool = rollingPool(st);
-  if (pool.length < playersPerGame()) return null;
+  if (!canStartGame(pool)) return null;
   const pos = {};
   pool.forEach((id, i) => { pos[id] = i; });
   const minPlayed = st.played[pool[0]] || 0;
@@ -1511,13 +1553,16 @@ function pickRollingGame() {
     for (let i = 0; i < pool.length; i++)
       for (let j = i + 1; j < pool.length; j++) candidates.push([[pool[i]], [pool[j]]]);
   } else {
-    // sample around the front of the queue: noisy priority sort, take first k, split randomly
-    const k = playersPerGame();
+    // sample around the front of the queue: noisy priority sort, form two sides from the front
     for (let attempt = 0; attempt < 1500; attempt++) {
       const spread = attempt === 0 ? 0 : Math.random() * pool.length;
-      const chosen = shuffle(pool.map((id, i) => [id, i + Math.random() * spread])
-        .sort((a, b) => a[1] - b[1]).slice(0, k).map(x => x[0]));
-      candidates.push([chosen.slice(0, S.teamSize), chosen.slice(S.teamSize)]);
+      const order = pool.map((id, i) => [id, i + Math.random() * spread])
+        .sort((a, b) => a[1] - b[1]).map(x => x[0]);
+      const { sides } = formSides(order, S.teamSize, 2);
+      if (sides.length < 2) continue;
+      const loose = shuffle(sides.flat().filter(id => !isFixed(id))); // split loose players randomly
+      const split = sides.map(side => isFixed(side[0]) ? side : loose.splice(0, S.teamSize));
+      candidates.push(shuffle(split));
     }
   }
 
@@ -1552,12 +1597,12 @@ function renderRolling(el) {
   const st = rollingStats();
   const pool = rollingPool(st);
   const need = playersPerGame();
-  const canStart = pool.length >= need;
+  const canStart = canStartGame(pool);
   const cards = list => `<div class="match-grid">${list.map(([m, mi]) => matchHtml(m, 0, mi, m.court)).join('')}</div>`;
 
   el.innerHTML =
     `<button class="primary-btn" style="margin-top:0" onclick="newGame()" ${canStart ? '' : 'disabled'}>＋ New game</button>` +
-    (canStart ? '' : `<p class="hint" style="text-align:center">Need ${need} waiting ${noun(false)}s to start a game — finish a game to free some up.</p>`) +
+    (canStart ? '' : `<p class="hint" style="text-align:center">${S.mode === 'mixer' && S.teams.some(t => t.fixed) ? 'Not enough waiting players for two sides' : `Need ${need} waiting ${noun(false)}s`} to start a game — finish a game to free some up.</p>`) +
     `<div class="section-label">Waiting (${pool.length})</div>` +
     (pool.length
       ? `<div class="preset-names">${pool.map(id =>
@@ -1634,7 +1679,7 @@ function renderStandings() {
         `<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>`) +
     `<table class="s-table">
       <thead><tr>
-        <th>#  ${S.mode === 'mixer' ? 'Player' : noun()}</th>
+        <th>#  ${S.mode === 'mixer' ? (S.teams.some(t => t.fixed) ? 'Player / Team' : 'Player') : noun()}</th>
         <th>P</th>
         <th style="color:var(--green)">W</th>
         <th style="color:var(--muted)">D</th>
@@ -1680,7 +1725,7 @@ function savePreset() {
     mode: S.mode,
     teamSize: S.teamSize,
     rolling: S.rolling,
-    teams: S.teams.map(t => ({ id: uid(), name: t.name }))
+    teams: S.teams.map(t => ({ id: uid(), name: t.name, ...(t.fixed ? { fixed: true } : {}) }))
   });
   savePresets();
   showToast(`"${name}" saved`);
@@ -1695,7 +1740,7 @@ function loadPreset(id) {
   S.mode      = p.mode;
   S.teamSize  = p.teamSize  ?? 2;
   S.rolling   = p.rolling   ?? false;
-  S.teams     = p.teams.map(t => ({ id: uid(), name: t.name }));
+  S.teams     = p.teams.map(t => ({ id: uid(), name: t.name, ...(t.fixed ? { fixed: true } : {}) }));
   S.rounds    = [];
   S.generated = false;
   save();
@@ -1729,7 +1774,7 @@ function renderPresets() {
     const noun = p.mode === 'teams' ? 'team' : 'player';
     const meta = `${modeLabel(p.mode)} · ${p.rolling ? 'Court by court' : 'Fixed rounds'} · ${p.teams.length} ${noun}${p.teams.length !== 1 ? 's' : ''}` +
       (p.mode === 'mixer' ? ` · ${p.teamSize}v${p.teamSize}` : '');
-    const tags = p.teams.map(t => `<span class="preset-tag">${esc(t.name)}</span>`).join('');
+    const tags = p.teams.map(t => `<span class="preset-tag">${esc(t.name)}${p.mode === 'mixer' && t.fixed ? ' 🔒' : ''}</span>`).join('');
     const isOpen = openPresets.has(p.id);
     return `<div class="preset-item${isOpen ? ' open' : ''}" id="preset-${p.id}">
       <div class="preset-header" onclick="togglePreset('${p.id}')">
